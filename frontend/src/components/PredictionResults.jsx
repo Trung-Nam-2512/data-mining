@@ -74,3 +74,5 @@ const PredictionResults = ({ prediction }) => {
 
 export default PredictionResults
 
+
+

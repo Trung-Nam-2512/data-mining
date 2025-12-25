@@ -44,3 +44,5 @@ class BatchPredictionResponse(BaseModel):
     total: int
     results: List[BatchPredictionResult]
 
+
+

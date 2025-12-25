@@ -34,3 +34,5 @@ async def health_check():
     """Health check endpoint"""
     return inference_service.get_health_status()
 
+
+
