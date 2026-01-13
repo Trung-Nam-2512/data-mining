@@ -1,0 +1,24 @@
+{
+  "backbone": "resnet50",
+  "timestamp": "20260113_135920",
+  "training_config": {
+    "batch_size": 192,
+    "num_epochs": 50,
+    "learning_rate": 0.001,
+    "num_workers": 32,
+    "use_mixed_precision": true
+  },
+  "results": {
+    "best_val_acc": 93.39055793991416,
+    "test_acc": 0.9158798283261803,
+    "best_epoch": 34,
+    "num_epochs_trained": 39,
+    "training_time_minutes": 7.597263932228088
+  },
+  "final_metrics": {
+    "train_loss": 0.6086770316650127,
+    "train_acc": 97.81089036055924,
+    "val_loss": 0.7903691359928676,
+    "val_acc": 93.13304721030043
+  }
+}

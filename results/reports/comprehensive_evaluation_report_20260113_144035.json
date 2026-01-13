@@ -1,0 +1,114 @@
+{
+  "evaluation_timestamp": "2026-01-13 14:40:35",
+  "dataset_info": {
+    "total_classes": 11,
+    "classes": [
+      "Agaricus",
+      "Amanita",
+      "Boletus",
+      "Cortinarius",
+      "Entoloma",
+      "Hygrocybe",
+      "Lactarius",
+      "Russula",
+      "Suillus",
+      "Exidia",
+      "Inocybe"
+    ],
+    "toxicity_mapping": {
+      "Amanita": "P",
+      "Cortinarius": "P",
+      "Entoloma": "P",
+      "Inocybe": "P",
+      "Agaricus": "E",
+      "Boletus": "E",
+      "Hygrocybe": "E",
+      "Lactarius": "E",
+      "Russula": "E",
+      "Suillus": "E",
+      "Exidia": "E"
+    }
+  },
+  "models_summary": [
+    {
+      "Model": "RESNET50",
+      "Test Accuracy (%)": "91.59",
+      "Best Val Accuracy (%)": "93.39",
+      "Best Epoch": 34,
+      "Epochs Trained": 39,
+      "Training Time (min)": "7.60",
+      "Macro Avg Precision": "90.64",
+      "Macro Avg Recall": "90.64",
+      "Macro Avg F1-Score": "90.57",
+      "Weighted Avg Precision": "91.67",
+      "Weighted Avg Recall": "91.59",
+      "Weighted Avg F1-Score": "91.59"
+    },
+    {
+      "Model": "MOBILENET_V3_LARGE",
+      "Test Accuracy (%)": "87.64",
+      "Best Val Accuracy (%)": "87.73",
+      "Best Epoch": 25,
+      "Epochs Trained": 30,
+      "Training Time (min)": "6.09",
+      "Macro Avg Precision": "87.49",
+      "Macro Avg Recall": "88.38",
+      "Macro Avg F1-Score": "87.54",
+      "Weighted Avg Precision": "88.60",
+      "Weighted Avg Recall": "87.64",
+      "Weighted Avg F1-Score": "87.77"
+    },
+    {
+      "Model": "EFFICIENTNET_B0",
+      "Test Accuracy (%)": "88.33",
+      "Best Val Accuracy (%)": "88.41",
+      "Best Epoch": 26,
+      "Epochs Trained": 31,
+      "Training Time (min)": "7.13",
+      "Macro Avg Precision": "87.63",
+      "Macro Avg Recall": "88.84",
+      "Macro Avg F1-Score": "88.09",
+      "Weighted Avg Precision": "88.70",
+      "Weighted Avg Recall": "88.33",
+      "Weighted Avg F1-Score": "88.34"
+    }
+  ],
+  "best_model": {
+    "backbone": "resnet50",
+    "test_accuracy": 91.58798283261802,
+    "best_val_accuracy": 93.39055793991416,
+    "training_time_minutes": 7.597263932228088
+  },
+  "efficiency_analysis": [
+    {
+      "Model": "RESNET50",
+      "Test Accuracy (%)": "91.59",
+      "Training Time (min)": "7.60",
+      "Efficiency Score": "0.1206",
+      "Epochs Trained": 39,
+      "Best Epoch": 34
+    },
+    {
+      "Model": "MOBILENET_V3_LARGE",
+      "Test Accuracy (%)": "87.64",
+      "Training Time (min)": "6.09",
+      "Efficiency Score": "0.1439",
+      "Epochs Trained": 30,
+      "Best Epoch": 25
+    },
+    {
+      "Model": "EFFICIENTNET_B0",
+      "Test Accuracy (%)": "88.33",
+      "Training Time (min)": "7.13",
+      "Efficiency Score": "0.1240",
+      "Epochs Trained": 31,
+      "Best Epoch": 26
+    }
+  ],
+  "recommendations": [
+    "Sử dụng RESNET50 cho production",
+    "Đảm bảo toxicity detection recall cao",
+    "Fine-tune với data augmentation",
+    "Monitor model performance trên dữ liệu thực tế"
+  ]
+}

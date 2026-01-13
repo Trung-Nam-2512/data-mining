@@ -1,0 +1,24 @@
+{
+  "backbone": "efficientnet_b0",
+  "timestamp": "20260113_135141",
+  "training_config": {
+    "batch_size": 192,
+    "num_epochs": 50,
+    "learning_rate": 0.001,
+    "num_workers": 32,
+    "use_mixed_precision": true
+  },
+  "results": {
+    "best_val_acc": 88.41201716738198,
+    "test_acc": 0.8832618025751073,
+    "best_epoch": 26,
+    "num_epochs_trained": 31,
+    "training_time_minutes": 7.125325771172841
+  },
+  "final_metrics": {
+    "train_loss": 0.6807167098439973,
+    "train_acc": 92.18175128771155,
+    "val_loss": 0.8440835475921631,
+    "val_acc": 88.41201716738198
+  }
+}

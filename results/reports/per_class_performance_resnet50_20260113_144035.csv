@@ -1,0 +1,12 @@
+Class,Toxicity,Precision (%),Recall (%),F1-Score (%),Support
+Agaricus,E,80.77,79.25,80.00,53
+Amanita,P,90.27,91.07,90.67,112
+Boletus,E,96.27,96.27,96.27,161
+Cortinarius,P,89.17,85.60,87.35,125
+Entoloma,P,86.21,92.59,89.29,54
+Hygrocybe,E,97.62,85.42,91.11,48
+Lactarius,E,93.99,93.19,93.59,235
+Russula,E,91.86,91.86,91.86,172
+Suillus,E,84.00,89.36,86.60,47
+Exidia,E,100.00,100.00,100.00,65
+Inocybe,P,86.87,92.47,89.58,93

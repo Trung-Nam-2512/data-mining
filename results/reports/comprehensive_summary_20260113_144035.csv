@@ -1,0 +1,4 @@
+Model,Test Accuracy (%),Best Val Accuracy (%),Best Epoch,Epochs Trained,Training Time (min),Macro Avg Precision,Macro Avg Recall,Macro Avg F1-Score,Weighted Avg Precision,Weighted Avg Recall,Weighted Avg F1-Score
+RESNET50,91.59,93.39,34,39,7.60,90.64,90.64,90.57,91.67,91.59,91.59
+MOBILENET_V3_LARGE,87.64,87.73,25,30,6.09,87.49,88.38,87.54,88.60,87.64,87.77
+EFFICIENTNET_B0,88.33,88.41,26,31,7.13,87.63,88.84,88.09,88.70,88.33,88.34

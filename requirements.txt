@@ -1,14 +1,69 @@
+# ==================== REQUIREMENTS - TỐI ƯU CHO RTX 3090 ====================
+# Core Deep Learning Libraries
+# Lưu ý: PyTorch với CUDA support - cài đặt từ https://pytorch.org/
+# Cho RTX 3090 (CUDA 12.x), khuyến nghị:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+# hoặc cho CUDA 11.8:
+# pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
 torch>=2.0.0
 torchvision>=0.15.0
-numpy>=1.24.0
+torchaudio>=2.0.0  # Thêm torchaudio (thường đi kèm với torch)
+
+# Data Processing
+numpy>=1.24.0,<2.0.0  # SỬA: Pin numpy < 2.0 để tránh lỗi tương thích với torchvision và các module khác
 pandas>=2.0.0
+Pillow>=10.0.0
+
+# Visualization
 matplotlib>=3.7.0
 seaborn>=0.12.0
+
+# Machine Learning
 scikit-learn>=1.3.0
-Pillow>=10.0.0
+
+# Progress Bar
 tqdm>=4.65.0
-streamlit>=1.28.0
-opencv-python>=4.8.0
-tensorboard>=2.13.0
+
+# Data Augmentation
 albumentations>=1.3.1
 
+# Optional: GPU Monitoring (hữu ích để theo dõi GPU usage)
+# pip install gpustat nvidia-ml-py3
+# gpustat>=1.1.0  # Uncomment nếu muốn monitor GPU
+# nvidia-ml-py3>=12.0.0  # Uncomment nếu muốn monitor GPU chi tiết
+
+# Optional: TensorBoard (đã có trong requirements)
+tensorboard>=2.13.0
+
+# Optional: OpenCV (nếu cần xử lý ảnh nâng cao)
+# Lưu ý: opencv-python có thể cảnh báo về numpy version, nhưng vẫn hoạt động với numpy 1.x
+opencv-python>=4.8.0
+
+# Optional: Streamlit (cho web app, nếu cần)
+streamlit>=1.28.0
+
+# ==================== HƯỚNG DẪN CÀI ĐẶT ====================
+# 
+# 1. Cài đặt PyTorch với CUDA support (QUAN TRỌNG):
+#    - Truy cập https://pytorch.org/get-started/locally/
+#    - Chọn: OS (Linux/Windows), Package (pip), CUDA (12.1 hoặc 11.8)
+#    - Ví dụ cho CUDA 12.1:
+#      pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+#    - Ví dụ cho CUDA 11.8:
+#      pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+#
+# 2. Cài đặt các thư viện còn lại:
+#    pip install -r requirements.txt
+#
+# 3. Kiểm tra GPU:
+#    python -c "import torch; print(f'CUDA available: {torch.cuda.is_available()}'); print(f'GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else \"N/A\"}')"
+#
+# 4. (Optional) Cài đặt GPU monitoring:
+#    pip install gpustat nvidia-ml-py3
+#    # Sử dụng: gpustat -i 1  # Hiển thị GPU usage mỗi giây
+#
+# ==================== LƯU Ý ====================
+# - Đảm bảo driver NVIDIA đã được cài đặt và CUDA toolkit tương thích
+# - RTX 3090 yêu cầu CUDA 11.0+ (khuyến nghị CUDA 11.8 hoặc 12.x)
+# - Kiểm tra CUDA version: nvidia-smi
+# - Nếu không có GPU, PyTorch sẽ tự động fallback về CPU

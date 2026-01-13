@@ -1,0 +1,24 @@
+{
+  "backbone": "mobilenet_v3_large",
+  "timestamp": "20260113_140528",
+  "training_config": {
+    "batch_size": 192,
+    "num_epochs": 50,
+    "learning_rate": 0.001,
+    "num_workers": 32,
+    "use_mixed_precision": true
+  },
+  "results": {
+    "best_val_acc": 87.72532188841201,
+    "test_acc": 0.8763948497854077,
+    "best_epoch": 25,
+    "num_epochs_trained": 30,
+    "training_time_minutes": 6.0916848142941795
+  },
+  "final_metrics": {
+    "train_loss": 0.676138777157356,
+    "train_acc": 92.42089771891096,
+    "val_loss": 0.8750501360212054,
+    "val_acc": 87.03862660944206
+  }
+}
