@@ -35,10 +35,10 @@ env/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Model files - now tracked in git
-# models/*.pth
-# models/*.pt
-# models/*.pkl
+# Model files (large)
+models/*.pth
+models/*.pt
+models/*.pkl
 
 # Results
 results/*.png
