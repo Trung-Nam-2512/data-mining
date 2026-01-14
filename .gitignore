@@ -71,6 +71,12 @@ temp_image.jpg
 # Markdown files
 *.md
 
+# Text files - ignore all .txt except link.txt
+*.txt
+!link.txt
+!requirements.txt
+!backend/requirements.txt
+
 # Notebook copy files
 mushroom_classification copy.ipynb
 mushroom_classification copy.*
