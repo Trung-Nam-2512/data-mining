@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  # Combined Frontend + Backend Service
+  mushroom-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mushroom_app
+    ports:
+      - "1356:1356"  # Single port for both frontend and backend
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=1356
+      - ENVIRONMENT=production
+      - MONGODB_URL=mongodb://host.docker.internal:27017
+      - MONGODB_DB_NAME=mushroom_classification
+      - DEVICE=cuda  # Change to 'cpu' if no GPU
+      - LOG_LEVEL=INFO
+    volumes:
+      # Mount models directory (so you don't need to copy large files into image)
+      - ./models:/app/models:ro  # Read-only mount
+      # Mount logs directory
+      - ./logs:/app/logs
+      # Mount uploads directory
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - mushroom_network
+    # Uncomment if using GPU
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+networks:
+  mushroom_network:
+    driver: bridge
+

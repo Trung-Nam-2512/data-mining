@@ -1,0 +1,65 @@
+version: '3.8'
+
+services:
+  # Mushroom App (Frontend + Backend)
+  mushroom-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mushroom_app
+    # KHÔNG expose port ra ngoài khi dùng Cloudflare Tunnel
+    # Port chỉ cần accessible từ localhost
+    # ports:
+    #   - "1356:1356"  # Uncomment nếu cần test local
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=1356
+      - ENVIRONMENT=production
+      - MONGODB_URL=mongodb://host.docker.internal:27017
+      - MONGODB_DB_NAME=mushroom_classification
+      - DEVICE=cuda  # Change to 'cpu' if no GPU
+      - LOG_LEVEL=INFO
+    volumes:
+      # Mount models directory (so you don't need to copy large files into image)
+      - ./models:/app/models:ro  # Read-only mount
+      # Mount logs directory
+      - ./logs:/app/logs
+      # Mount uploads directory
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - mushroom_network
+    # Uncomment if using GPU
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # Cloudflare Tunnel (Optional - nếu muốn chạy trong Docker)
+  # Nếu bạn đã cài cloudflared trên host, không cần service này
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared_tunnel
+    command: tunnel --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
+      - ./cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro
+    network_mode: host  # Cần host network để access localhost:1356
+    restart: unless-stopped
+    depends_on:
+      - mushroom-app
+    # Alternative: Dùng shared network thay vì host mode
+    # networks:
+    #   - mushroom_network
+    # # Và trong config.yml, dùng service name:
+    # # service: http://mushroom-app:1356
+
+networks:
+  mushroom_network:
+    driver: bridge
+

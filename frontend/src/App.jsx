@@ -1,24 +1,26 @@
 /**
- * Main App Component
+ * Main App Component with Routing
  */
-import Header from './components/Header'
-import Sidebar from './components/Sidebar'
-import Footer from './components/Footer'
+import { Routes, Route } from 'react-router-dom'
+import { AnimatePresence } from 'framer-motion'
+import Layout from './components/Layout'
 import HomePage from './pages/HomePage'
-import './styles/App.css'
+import BatchPage from './pages/BatchPage'
+import GradCAMPage from './pages/GradCAMPage'
+import HistoryPage from './pages/HistoryPage'
 
 function App() {
   return (
-    <div className="app">
-      <Header />
-      <main className="main-content">
-        <div className="container">
-          <Sidebar />
-          <HomePage />
-        </div>
-      </main>
-      <Footer />
-    </div>
+    <Layout>
+      <AnimatePresence mode="wait">
+        <Routes>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/batch" element={<BatchPage />} />
+          <Route path="/gradcam" element={<GradCAMPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+        </Routes>
+      </AnimatePresence>
+    </Layout>
   )
 }
 

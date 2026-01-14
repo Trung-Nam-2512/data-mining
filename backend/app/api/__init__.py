@@ -1,12 +1,1 @@
-"""
-API Routes Package
-"""
-
-
-
-
-
-
-
-
-
+"""API module"""

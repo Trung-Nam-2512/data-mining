@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # Backend API
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mushroom_backend
+    ports:
+      - "1356:1356"  # Map port 1356 as requested
+    environment:
+      - SERVER_HOST=0.0.0.0
+      - SERVER_PORT=1356
+      - ENVIRONMENT=production
+      - MONGODB_URL=mongodb://host.docker.internal:27017
+      - MONGODB_DB_NAME=mushroom_classification
+      - DEVICE=cuda  # Change to 'cpu' if no GPU
+      - LOG_LEVEL=INFO
+    volumes:
+      # Mount models directory (so you don't need to copy large files into image)
+      - ../models:/app/models:ro  # Read-only mount
+      # Mount logs directory
+      - ./logs:/app/logs
+      # Mount uploads directory
+      - ./uploads:/app/uploads
+    # depends_on:
+    #   - mongodb
+    restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - mushroom_network
+    # Uncomment if using GPU
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # MongoDB database (commented out - using host MongoDB)
+  # mongodb:
+  #   image: mongo:7.0
+  #   container_name: mushroom_mongodb
+  #   ports:
+  #     - "27017:27017"
+  #   volumes:
+  #     # Persist MongoDB data
+  #     - mongodb_data:/data/db
+  #   environment:
+  #     - MONGO_INITDB_DATABASE=mushroom_classification
+  #   restart: unless-stopped
+  #   networks:
+  #     - mushroom_network
+
+networks:
+  mushroom_network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
+
+

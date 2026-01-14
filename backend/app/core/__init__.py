@@ -1,12 +1,1 @@
-"""
-Core configuration and settings
-"""
-
-
-
-
-
-
-
-
-
+"""Core module for model inference"""
