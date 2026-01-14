@@ -1,0 +1,615 @@
+3.2. TRIỂN KHAI QUY TRÌNH HUẤN LUYỆN VÀ KIỂM ĐỊNH (TRAINING PIPELINE)
+
+Quy trình huấn luyện là giai đoạn quan trọng nhất trong việc xây dựng mô hình học máy, nơi mô hình học các đặc trưng và patterns từ dữ liệu huấn luyện để có thể thực hiện nhiệm vụ phân loại. Một quy trình huấn luyện được thiết kế tốt không chỉ đảm bảo mô hình học hiệu quả mà còn phải có các cơ chế giám sát, đánh giá và tối ưu hóa để đạt được kết quả tốt nhất. Trong đề tài này, một training pipeline hoàn chỉnh đã được triển khai với các cơ chế monitoring (giám sát), validation (kiểm định), và tối ưu hóa để đảm bảo mô hình học hiệu quả và ổn định.
+
+3.2.1. Cơ chế lan truyền xuôi và ngược (Forward và Backward Propagation)
+
+a) Khái niệm về Epoch và Batch:
+
+Trước khi đi vào chi tiết quy trình training, cần hiểu rõ các khái niệm cơ bản:
+
+- Epoch: Một epoch là một lần duyệt qua toàn bộ dataset huấn luyện. Ví dụ, nếu dataset có 5,436 ảnh và batch size là 192, thì một epoch sẽ bao gồm 29 batches (5,436 / 192 ≈ 29).
+
+- Batch: Batch là một nhóm mẫu dữ liệu được xử lý cùng lúc trong một lần forward và backward pass. Batch size (kích thước batch) quyết định số lượng mẫu được xử lý đồng thời. Batch size lớn hơn thường ổn định hơn nhưng đòi hỏi nhiều bộ nhớ hơn.
+
+- Iteration: Một iteration là một lần xử lý một batch. Số lượng iterations trong một epoch = số lượng batches = tổng số mẫu / batch size.
+
+b) Quy trình Training một Epoch:
+
+Hàm train_epoch() được thiết kế để thực hiện training cho một epoch hoàn chỉnh. Quy trình này bao gồm các bước sau:
+
+1. Chuyển mô hình sang chế độ training:
+
+Trước khi bắt đầu training, mô hình cần được chuyển sang chế độ training bằng lệnh model.train(). Điều này có ý nghĩa quan trọng:
+
+- Kích hoạt Dropout: Các lớp Dropout sẽ hoạt động, "tắt" ngẫu nhiên một tỷ lệ neurons theo xác suất đã đặt (0.5 và 0.3 trong Custom Classifier Head).
+
+- Batch Normalization ở training mode: Các lớp Batch Normalization sẽ tính toán mean và variance từ batch hiện tại và cập nhật running statistics.
+
+- Cho phép tính toán gradients: Mô hình sẽ lưu trữ thông tin cần thiết để tính toán gradients trong quá trình backward pass.
+
+2. Khởi tạo Mixed Precision Training:
+
+Nếu Mixed Precision Training được bật (use_mixed_precision=True và có GPU), hệ thống sẽ tạo một GradScaler. GradScaler là một công cụ quan trọng trong Mixed Precision Training:
+
+- Chức năng: Scale (nhân) loss với một hệ số trước khi backward pass để tránh underflow (tràn dưới) khi sử dụng FP16. Sau đó unscale gradients trước khi cập nhật weights.
+
+- Tại sao cần: FP16 có phạm vi giá trị nhỏ hơn FP32, gradients có thể quá nhỏ và bị làm tròn về 0 (underflow). Scaling giúp giữ gradients ở phạm vi hợp lý.
+
+3. Duyệt qua từng batch trong training loader:
+
+Training loader được chia thành nhiều batches. Với mỗi batch:
+
+- Progress tracking: Sử dụng thư viện tqdm để hiển thị progress bar với thông tin real-time về loss và accuracy hiện tại. Điều này giúp theo dõi tiến trình training một cách trực quan.
+
+- Data transfer: Chuyển dữ liệu (ảnh và labels) từ CPU lên GPU (nếu có) bằng phương thức .to(device). Việc này cần thiết vì GPU xử lý nhanh hơn nhiều so với CPU cho các phép tính ma trận.
+
+4. Forward Pass (Lan truyền xuôi):
+
+Forward pass là quá trình đưa dữ liệu đầu vào qua mô hình để tính toán đầu ra:
+
+a) Reset gradients:
+
+Trước mỗi batch, cần reset gradients về 0 bằng optimizer.zero_grad(). Điều này rất quan trọng vì PyTorch tích lũy gradients theo mặc định. Nếu không reset, gradients từ các batch trước sẽ được cộng dồn, dẫn đến kết quả sai.
+
+b) Tính toán với Mixed Precision hoặc Standard:
+
+- Với Mixed Precision Training:
+  + Sử dụng context manager torch.cuda.amp.autocast() để tự động chọn FP16 cho các phép tính phù hợp (như convolution, matrix multiplication) và FP32 cho các phép tính cần độ chính xác cao (như loss calculation).
+  + Tính outputs = model(images): Đưa batch ảnh qua mô hình, mô hình sẽ thực hiện forward pass qua tất cả các lớp (backbone → classifier) để tạo ra logits (điểm số chưa chuẩn hóa cho 11 lớp).
+  + Tính loss = criterion(outputs, labels): So sánh outputs với labels thực tế để tính loss. Criterion (CrossEntropyLoss) sẽ áp dụng class weights và label smoothing như đã thiết kế.
+
+- Với Standard Training (FP32):
+  + Thực hiện tương tự nhưng không sử dụng autocast, tất cả phép tính đều dùng FP32.
+
+5. Backward Pass (Lan truyền ngược):
+
+Backward pass là quá trình tính toán gradients (đạo hàm) của loss theo các tham số của mô hình, sau đó cập nhật các tham số này để giảm loss:
+
+a) Với Mixed Precision Training:
+
+- scaler.scale(loss).backward(): 
+  + Scale loss lên (nhân với hệ số) trước khi backward để tránh underflow
+  + Thực hiện backward pass: PyTorch tự động tính gradients cho tất cả các tham số có requires_grad=True bằng cách sử dụng quy tắc chain rule (quy tắc chuỗi) trong đạo hàm.
+  + Gradients được lưu trong thuộc tính .grad của mỗi tham số.
+
+- scaler.step(optimizer):
+  + Unscale gradients (chia cho hệ số) trước khi cập nhật
+  + Kiểm tra gradients có bị overflow (tràn trên) không, nếu có thì bỏ qua batch này
+  + Optimizer (Adam) sử dụng gradients để cập nhật weights theo thuật toán của mình
+
+- scaler.update():
+  + Cập nhật hệ số scaling cho batch tiếp theo dựa trên việc có overflow hay không
+
+b) Với Standard Training:
+
+- loss.backward(): Tính gradients trực tiếp với FP32
+- optimizer.step(): Cập nhật weights dựa trên gradients
+
+6. Tính toán thống kê:
+
+Sau mỗi batch, hệ thống tính toán các thống kê để theo dõi tiến trình:
+
+- Cập nhật running_loss: Cộng dồn loss của batch hiện tại vào tổng loss
+- Tính accuracy: 
+  + Sử dụng torch.max(outputs.data, 1) để tìm lớp có điểm số cao nhất (predicted class)
+  + So sánh với labels thực tế để đếm số dự đoán đúng
+  + Accuracy = (số dự đoán đúng / tổng số mẫu) × 100%
+- Cập nhật progress bar: Hiển thị loss và accuracy hiện tại để người dùng theo dõi
+
+7. Trả về kết quả:
+
+Sau khi duyệt qua tất cả batches trong epoch:
+
+- epoch_loss = running_loss / len(train_loader): Tính loss trung bình của toàn bộ epoch
+- epoch_acc = 100 * correct / total: Tính accuracy trung bình của toàn bộ epoch
+
+c) Ý nghĩa của Forward và Backward Pass:
+
+- Forward Pass: Mô phỏng quá trình "nhìn" và "nhận diện" của mô hình. Mô hình nhận ảnh đầu vào, xử lý qua các lớp, và đưa ra dự đoán.
+
+- Backward Pass: Mô phỏng quá trình "học" của mô hình. Dựa trên sai số giữa dự đoán và kết quả thực tế, mô hình điều chỉnh các tham số (weights và biases) để giảm sai số trong lần sau.
+
+- Gradient: Gradient là đạo hàm của loss theo từng tham số, cho biết hướng và độ lớn cần điều chỉnh. Gradient dương nghĩa là tăng tham số sẽ tăng loss (cần giảm), gradient âm nghĩa là tăng tham số sẽ giảm loss (cần tăng).
+
+d) Đặc điểm của Training Epoch:
+
+- Progress Tracking: Hiển thị real-time loss và accuracy giúp phát hiện sớm các vấn đề (như loss không giảm, accuracy không tăng)
+
+- Error Handling: Xử lý lỗi gracefully (như lỗi memory, lỗi tính toán) để không làm dừng toàn bộ quá trình training
+
+- Memory Efficiency: Sử dụng Mixed Precision để giảm memory usage, cho phép sử dụng batch size lớn hơn
+
+- Flexibility: Hỗ trợ cả FP16 và FP32 training, có thể chuyển đổi dễ dàng
+
+3.2.2. Chiến lược kiểm định và tiết kiệm tài nguyên (Validation)
+
+a) Khái niệm về Validation:
+
+Validation (kiểm định) là quá trình đánh giá mô hình trên một tập dữ liệu riêng biệt (validation set) mà mô hình chưa được huấn luyện trên đó. Validation set được tách ra từ dataset ban đầu và không được sử dụng trong quá trình training. Mục đích của validation là:
+
+- Đánh giá khả năng generalization (tổng quát hóa): Kiểm tra xem mô hình có thể hoạt động tốt trên dữ liệu mới mà nó chưa từng thấy hay không.
+
+- Phát hiện overfitting: Nếu training accuracy cao nhưng validation accuracy thấp, đó là dấu hiệu của overfitting - mô hình đã "học thuộc" dữ liệu training nhưng không thể tổng quát hóa.
+
+- Điều chỉnh hyperparameters: Validation metrics được sử dụng để quyết định các tham số như learning rate, số epochs, v.v.
+
+b) Quy trình Validation:
+
+Hàm validate() được thiết kế để đánh giá mô hình trên validation set một cách hiệu quả:
+
+1. Chuyển mô hình sang chế độ evaluation:
+
+model.eval() chuyển mô hình sang chế độ evaluation, có các tác động:
+
+- Tắt Dropout: Tất cả neurons đều hoạt động (không có dropout), đảm bảo kết quả nhất quán và đại diện cho khả năng thực sự của mô hình.
+
+- Batch Normalization ở eval mode: Sử dụng running mean và variance đã được tính toán trong quá trình training, không tính toán lại từ batch hiện tại. Điều này đảm bảo kết quả ổn định và không phụ thuộc vào batch size.
+
+- Không cập nhật running statistics: Các thống kê như mean, variance của Batch Normalization không được cập nhật.
+
+2. Tắt gradient computation:
+
+with torch.no_grad() là một context manager quan trọng trong validation:
+
+- Không tính gradients: PyTorch sẽ không tính toán và lưu trữ gradients, tiết kiệm đáng kể memory và tăng tốc độ xử lý.
+
+- Lý do: Validation không cần cập nhật weights, do đó không cần gradients. Việc tính gradients trong validation là lãng phí tài nguyên.
+
+- Hiệu quả: Tiết kiệm memory ~50% và tăng tốc độ ~2x so với việc tính gradients.
+
+3. Duyệt qua validation loader:
+
+Tương tự như training, validation cũng xử lý theo batch:
+
+- Progress tracking: Sử dụng tqdm để hiển thị tiến trình validation
+- Data transfer: Chuyển dữ liệu lên device (GPU/CPU)
+
+4. Forward Pass:
+
+Quá trình forward pass trong validation tương tự training nhưng có một số điểm khác biệt:
+
+- Sử dụng Mixed Precision: Nếu được bật, sử dụng autocast() để tăng tốc inference
+- Tính outputs: Đưa ảnh qua mô hình để nhận logits
+- Tính loss: So sánh với labels để tính loss (chỉ để đánh giá, không dùng để cập nhật weights)
+
+5. Tính toán thống kê:
+
+- Cập nhật running_loss: Tổng hợp loss của tất cả batches
+- Tính accuracy: Đếm số dự đoán đúng
+- Không thực hiện backward pass: Không tính gradients, không cập nhật weights
+
+6. Trả về kết quả:
+
+- epoch_loss = running_loss / len(val_loader): Loss trung bình trên validation set
+- epoch_acc = 100 * correct / total: Accuracy trung bình trên validation set
+
+c) Tối ưu hóa tài nguyên trong Validation:
+
+Validation được tối ưu hóa để tiết kiệm tài nguyên và tăng tốc độ:
+
+1. Không tính gradients:
+
+- Tiết kiệm memory: Không cần lưu trữ gradients cho hàng triệu tham số
+- Tăng tốc độ: Bỏ qua quá trình backward pass, tiết kiệm ~50% thời gian
+- Giảm overhead: Không cần quản lý computation graph cho backward pass
+
+2. Mixed Precision Inference:
+
+- Sử dụng FP16 cho forward pass: Tăng tốc inference ~1.5-2x
+- Không cần gradient scaling: Vì không có backward pass
+- Giữ nguyên độ chính xác: FP16 đủ cho inference
+
+3. Batch Processing:
+
+- Xử lý theo batch: Tận dụng GPU parallelism để xử lý nhiều ảnh cùng lúc
+- Batch size: Sử dụng cùng batch size với training để nhất quán
+
+4. Không shuffle:
+
+- Validation loader không shuffle: Đảm bảo kết quả nhất quán giữa các lần chạy
+- Deterministic: Cùng một validation set sẽ cho cùng kết quả
+
+d) Vai trò của Validation trong Training Pipeline:
+
+1. Đánh giá Performance:
+
+Validation accuracy cho biết mô hình hoạt động tốt như thế nào trên dữ liệu mới. Đây là metric quan trọng nhất để đánh giá khả năng generalization.
+
+2. Early Stopping:
+
+Early Stopping sử dụng validation accuracy để quyết định khi nào dừng training:
+- Nếu validation accuracy không cải thiện trong một số epochs (patience), training sẽ dừng
+- Tránh overfitting bằng cách dừng trước khi mô hình bắt đầu học quá mức trên training data
+
+3. Model Selection:
+
+Best model được chọn dựa trên validation accuracy cao nhất:
+- Sau mỗi epoch, nếu validation accuracy cải thiện, mô hình hiện tại được lưu làm best model
+- Cuối cùng, best model (không phải model cuối cùng) được sử dụng cho evaluation
+
+4. Learning Rate Scheduling:
+
+ReduceLROnPlateau sử dụng validation loss để điều chỉnh learning rate:
+- Nếu validation loss không giảm trong một số epochs, learning rate được giảm xuống
+- Giúp mô hình hội tụ tốt hơn ở giai đoạn cuối
+
+3.2.3. Trực quan hóa tiến trình (Monitoring và User Experience)
+
+a) Tầm quan trọng của Monitoring:
+
+Monitoring (giám sát) là quá trình theo dõi và ghi lại các thông tin trong quá trình training. Một hệ thống monitoring tốt giúp:
+
+- Phát hiện sớm các vấn đề: Loss không giảm, accuracy không tăng, overfitting, v.v.
+- Theo dõi tiến trình: Biết được mô hình đang học tốt hay không
+- Phân tích sau training: So sánh các experiments, tìm nguyên nhân của các vấn đề
+- Reproducibility: Có thể tái tạo lại kết quả nhờ logs chi tiết
+
+b) Logging System (Hệ thống ghi log):
+
+Hệ thống logging được thiết kế để ghi lại toàn bộ quá trình training một cách có hệ thống:
+
+1. Setup Logger:
+
+Logger được tạo riêng cho mỗi backbone training session để dễ quản lý:
+
+- File Handler: Ghi tất cả thông tin vào file log với timestamp, cho phép xem lại sau này
+- Console Handler: Hiển thị thông tin quan trọng trên console để theo dõi real-time
+- Format: Timestamp, log level (INFO, WARNING, ERROR), và message
+- Encoding: UTF-8 để hỗ trợ tiếng Việt và các ký tự đặc biệt
+
+2. Nội dung Logging:
+
+Hệ thống ghi lại các thông tin sau:
+
+- Training Configuration: Batch size, số epochs, learning rate, số workers, mixed precision, v.v. - giúp biết được mô hình được train với cấu hình nào
+
+- Mỗi Epoch: 
+  + Train loss và accuracy
+  + Validation loss và accuracy
+  + Patience counter (số epochs không cải thiện)
+  + Learning rate hiện tại
+
+- Best Model: Epoch và validation accuracy khi có model mới tốt nhất
+
+- Early Stopping: Thông báo khi training dừng sớm, bao gồm lý do và best epoch
+
+- Errors: Ghi lại bất kỳ lỗi nào xảy ra trong quá trình training, kèm theo stack trace để debug
+
+3. Log Files:
+
+- Định dạng tên file: training_{backbone_name}_{timestamp}.log
+  + backbone_name: Tên backbone (efficientnet_b0, resnet50, mobilenet_v3_large)
+  + timestamp: Định dạng YYYYMMDD_HHMMSS để dễ sắp xếp và tìm kiếm
+- Lưu tại: results/logs/ - tổ chức rõ ràng, dễ quản lý
+- Encoding: UTF-8 để hỗ trợ đầy đủ các ký tự
+
+c) Progress Visualization (Trực quan hóa tiến trình):
+
+1. Progress Bars với tqdm:
+
+tqdm (taqaddum - tiến bộ trong tiếng Ả Rập) là thư viện hiển thị progress bar đẹp mắt và thông tin:
+
+- Training Progress Bar:
+  + Hiển thị: Số batch hiện tại / tổng số batches
+  + Thời gian: Thời gian đã trôi qua và ước tính thời gian còn lại
+  + Metrics: Loss và accuracy hiện tại được cập nhật real-time
+  + Format ví dụ: "Training: 100%|████████| 29/29 [00:14<00:00, loss=1.30, acc=45.92%]"
+
+- Validation Progress Bar:
+  + Tương tự training nhưng không có metrics (vì validation nhanh hơn)
+  + Format ví dụ: "Validating: 100%|████████| 7/7 [00:12<00:00]"
+
+- Lợi ích:
+  + Theo dõi tiến trình trực quan
+  + Ước tính thời gian hoàn thành
+  + Phát hiện sớm các vấn đề (như training quá chậm)
+
+2. Console Output:
+
+Ngoài progress bars, hệ thống còn in ra console các thông tin quan trọng:
+
+- Mỗi Epoch: In ra train/val loss và accuracy, giúp theo dõi xu hướng
+- Best Model: Highlight (làm nổi bật) khi có model mới tốt nhất, dễ nhận biết
+- Early Stopping: Cảnh báo rõ ràng khi training dừng sớm, kèm theo thông tin về best epoch
+
+d) Training Curves Visualization (Trực quan hóa đường cong huấn luyện):
+
+Hàm save_training_plots() tạo các biểu đồ trực quan để phân tích quá trình training:
+
+1. Loss Plot (Biểu đồ Loss):
+
+- Trục X: Số epoch (từ 1 đến số epoch đã train)
+- Trục Y: Giá trị loss
+- Đường biểu diễn:
+  + Train Loss (màu xanh): Loss trên training set, thường giảm dần
+  + Val Loss (màu đỏ): Loss trên validation set, có thể tăng nếu overfitting
+- Grid: Hiển thị lưới để dễ đọc giá trị
+- Title: "Training & Validation Loss - {backbone_name}"
+- Phân tích:
+  + Nếu cả hai đường đều giảm: Mô hình đang học tốt
+  + Nếu train loss giảm nhưng val loss tăng: Dấu hiệu overfitting
+  + Nếu cả hai đều không giảm: Có thể learning rate quá thấp hoặc có vấn đề khác
+
+2. Accuracy Plot (Biểu đồ Accuracy):
+
+- Trục X: Số epoch
+- Trục Y: Accuracy (%)
+- Đường biểu diễn:
+  + Train Acc (màu xanh): Accuracy trên training set
+  + Val Acc (màu đỏ): Accuracy trên validation set
+- Grid: Hiển thị lưới
+- Title: "Training & Validation Accuracy - {backbone_name}"
+- Phân tích:
+  + Nếu cả hai đều tăng: Mô hình đang học tốt
+  + Nếu train acc cao nhưng val acc thấp: Overfitting
+  + Khoảng cách giữa train và val acc cho biết mức độ overfitting
+
+3. Lưu file:
+
+- Định dạng: PNG với DPI 300 (độ phân giải cao, phù hợp cho báo cáo)
+- Tên file: training_curves_{backbone_name}_{timestamp}.png
+- Lưu tại: results/plots/ - tổ chức rõ ràng
+
+e) Model Checkpointing (Lưu điểm kiểm tra mô hình):
+
+Checkpointing là quá trình lưu trạng thái của mô hình tại một thời điểm cụ thể, cho phép:
+- Tiếp tục training từ điểm đã lưu nếu bị gián đoạn
+- Sử dụng best model thay vì model cuối cùng
+- So sánh các versions khác nhau của mô hình
+
+1. Best Model Saving:
+
+Hệ thống tự động lưu best model khi validation accuracy cải thiện:
+
+- Điều kiện: Validation accuracy > best_val_acc hiện tại
+- Nội dung checkpoint bao gồm:
+  + epoch: Số epoch tốt nhất (để biết mô hình được train trong bao lâu)
+  + model_state_dict: Tất cả weights và biases của mô hình (cho phép load lại mô hình chính xác)
+  + optimizer_state_dict: Trạng thái của optimizer (momentum, learning rate, v.v.) - hữu ích nếu muốn tiếp tục training
+  + best_val_acc: Validation accuracy tốt nhất (để đánh giá chất lượng mô hình)
+  + train_losses, train_accs: Lịch sử training (để vẽ biểu đồ sau này)
+  + val_losses, val_accs: Lịch sử validation (để phân tích)
+  + backbone, num_classes: Thông tin về kiến trúc mô hình
+  + poisonous_weight_multiplier: Hệ số nhân cho class weights (để biết mô hình được train với cấu hình nào)
+  + training_timestamp: Thời gian training (để quản lý versions)
+
+2. File Naming Convention:
+
+- Standard: best_model_{backbone_name}.pth - Mô hình được train với class weights mặc định (2.0x)
+- Improved: best_model_{backbone_name}_improved.pth - Mô hình được retrain với improved weights (4.0x)
+
+3. Lưu trữ:
+
+- Thư mục: models/ - tổ chức rõ ràng, dễ tìm kiếm
+- Định dạng: .pth (PyTorch format) - chuẩn của PyTorch
+
+f) Training Summary Export (Xuất tóm tắt huấn luyện):
+
+Hàm save_training_summary() lưu tóm tắt training dưới dạng JSON để dễ phân tích và so sánh:
+
+1. Nội dung Summary:
+
+- backbone: Tên backbone model
+- timestamp: Thời gian training (định dạng YYYYMMDD_HHMMSS)
+- training_config: 
+  + batch_size: Kích thước batch
+  + num_epochs: Số epochs tối đa
+  + learning_rate: Learning rate ban đầu
+  + num_workers: Số workers cho data loading
+  + use_mixed_precision: Có sử dụng Mixed Precision hay không
+- results:
+  + best_val_acc: Validation accuracy tốt nhất
+  + test_acc: Test accuracy (sau khi evaluate trên test set)
+  + best_epoch: Epoch đạt best validation accuracy
+  + num_epochs_trained: Số epochs thực tế đã train (có thể ít hơn num_epochs nếu early stopping)
+  + training_time_minutes: Thời gian training tính bằng phút
+- final_metrics:
+  + train_loss, train_acc: Loss và accuracy cuối cùng trên training set
+  + val_loss, val_acc: Loss và accuracy cuối cùng trên validation set
+
+2. File Format:
+
+- Định dạng: JSON (JavaScript Object Notation) - dễ đọc và parse bằng code
+- Encoding: UTF-8
+- Tên file: training_summary_{backbone_name}_{timestamp}.json
+- Lưu tại: results/reports/
+
+3. Lợi ích:
+
+- Dễ so sánh: Có thể load và so sánh nhiều training sessions
+- Tự động hóa: Có thể viết script để phân tích và so sánh tự động
+- Reproducibility: Có đầy đủ thông tin để tái tạo lại kết quả
+
+3.2.4. Training Loop chính (Main Training Loop)
+
+a) Khái niệm về Training Loop:
+
+Training Loop là vòng lặp chính điều khiển toàn bộ quá trình huấn luyện, từ khởi tạo mô hình đến lưu kết quả cuối cùng. Một training loop được thiết kế tốt phải đảm bảo tính ổn định, hiệu quả, và có khả năng xử lý lỗi.
+
+b) Quy trình Training hoàn chỉnh:
+
+Hàm train_single_backbone() thực hiện training cho một backbone model với quy trình 8 bước:
+
+1. Setup (Bước 1/8):
+
+- Tạo logger: Khởi tạo logging system với file handler và console handler
+- Ghi log thông tin training: Ghi lại cấu hình training, timestamp, device, v.v.
+- Mục đích: Đảm bảo có đầy đủ thông tin để theo dõi và debug sau này
+
+2. Tạo Model (Bước 2/8):
+
+- Khởi tạo MushroomClassifier: Tạo mô hình với backbone tương ứng, số classes (11), và pre-trained weights
+- Model Compilation: Nếu có GPU và PyTorch >= 2.0, compile model với torch.compile() để tối ưu
+- Chuyển lên device: Di chuyển mô hình lên GPU (nếu có) hoặc giữ trên CPU
+- Mục đích: Có một mô hình sẵn sàng để train
+
+3. Khởi tạo Loss và Optimizer (Bước 3/8):
+
+- Loss Function: Tạo CrossEntropyLoss với class weights (đã tính sẵn) và label smoothing (10%)
+- Optimizer: Tạo Adam optimizer với Differential Learning Rates:
+  + Tách parameters thành backbone và classifier
+  + Backbone LR = base_lr × 0.1
+  + Classifier LR = base_lr × 1.0
+  + Weight decay = 1e-4
+- Scheduler: Tạo ReduceLROnPlateau scheduler với factor=0.5, patience=5
+- Mục đích: Có đầy đủ các công cụ cần thiết cho training
+
+4. Training Loop (Bước 4/8):
+
+Đây là bước quan trọng nhất, thực hiện vòng lặp training:
+
+a) Khởi tạo:
+- Training history: Khởi tạo các list để lưu train_losses, train_accs, val_losses, val_accs
+- Early Stopping: Khởi tạo best_val_acc=0.0, best_epoch=0, patience_counter=0, patience=5
+- Best model state: Khởi tạo best_model_state=None để lưu state của best model
+
+b) Vòng lặp qua các epochs:
+
+Với mỗi epoch từ 1 đến num_epochs:
+
+- Train Epoch: Gọi train_epoch() để train một epoch, nhận train_loss và train_acc
+- Validate: Gọi validate() để đánh giá trên validation set, nhận val_loss và val_acc
+- Learning Rate Scheduling: Gọi scheduler.step(val_loss) để điều chỉnh learning rate nếu cần
+- Early Stopping Check:
+  + Nếu val_acc > best_val_acc: Cập nhật best_val_acc, best_epoch, reset patience_counter, lưu best_model_state
+  + Nếu không: Tăng patience_counter, nếu >= patience thì dừng training
+- Logging: Ghi log kết quả của epoch (loss, accuracy, patience)
+- Console Output: In ra console để theo dõi real-time
+
+c) Xử lý lỗi:
+
+- Try-except: Bọc toàn bộ training loop trong try-except để xử lý lỗi
+- Nếu có lỗi: Vẫn cố gắng lưu kết quả đã train được (nếu có)
+
+5. Load Best Model (Bước 5/8):
+
+- Kiểm tra: Nếu có best_model_state, load vào mô hình
+- Mục đích: Đảm bảo sử dụng mô hình tốt nhất, không phải mô hình cuối cùng (có thể đã overfit)
+
+6. Lưu Best Model (Bước 6/8):
+
+- Kiểm tra improved weights: Nếu POISONOUS_WEIGHT_MULTIPLIER >= 4.0, lưu với suffix "_improved"
+- Lưu checkpoint: Sử dụng torch.save() để lưu tất cả thông tin cần thiết
+- Logging: Ghi log đường dẫn file đã lưu
+
+7. Đánh giá Test Set (Bước 7/8):
+
+- Evaluate: Gọi evaluate_on_loader() để đánh giá mô hình trên test set
+- Tính metrics: Accuracy, classification report (precision, recall, F1-score cho từng class), confusion matrix
+- Mục đích: Đánh giá cuối cùng khả năng của mô hình trên dữ liệu hoàn toàn mới
+
+8. Lưu Plots và Reports (Bước 8/8):
+
+- Training Curves: Gọi save_training_plots() để tạo và lưu biểu đồ loss và accuracy
+- Confusion Matrix: Gọi save_confusion_matrix() để tạo và lưu confusion matrix
+- Classification Report: Gọi save_classification_report() để lưu report dưới dạng JSON và TXT
+- Training Summary: Gọi save_training_summary() để lưu summary JSON
+
+9. Cleanup (Dọn dẹp):
+
+- Giải phóng memory: Xóa model, optimizer, scheduler, best_model_state
+- Garbage collection: Gọi gc.collect() để giải phóng memory
+- CUDA cache: Nếu có GPU, gọi torch.cuda.empty_cache() để giải phóng GPU memory
+- Mục đích: Chuẩn bị cho việc train backbone tiếp theo
+
+c) Early Stopping Mechanism (Cơ chế dừng sớm):
+
+Early Stopping là một kỹ thuật quan trọng để tránh overfitting:
+
+1. Cơ chế hoạt động:
+
+- Patience: 5 epochs - Số epochs chờ đợi trước khi dừng
+- Monitoring metric: Validation accuracy
+- Điều kiện dừng: Nếu validation accuracy không cải thiện trong 5 epochs liên tiếp
+
+2. Quy trình:
+
+- Sau mỗi epoch, so sánh validation accuracy với best_val_acc
+- Nếu cải thiện: Reset patience_counter về 0, cập nhật best_val_acc và best_epoch
+- Nếu không cải thiện: Tăng patience_counter lên 1
+- Nếu patience_counter >= patience: Dừng training, sử dụng best model
+
+3. Lợi ích:
+
+- Tránh overfitting: Dừng trước khi mô hình học quá mức trên training data
+- Tiết kiệm thời gian: Không cần chờ đến hết số epochs đã đặt
+- Tự động chọn best model: Luôn sử dụng mô hình tốt nhất, không phải mô hình cuối cùng
+
+d) Learning Rate Scheduling (Điều chỉnh tốc độ học):
+
+Learning Rate Scheduling là quá trình điều chỉnh learning rate trong quá trình training:
+
+1. ReduceLROnPlateau:
+
+- Cơ chế: Giảm learning rate khi validation loss không cải thiện
+- Mode: 'min' - Giảm khi metric (loss) không giảm
+- Factor: 0.5 - Giảm learning rate một nửa mỗi lần
+- Patience: 5 epochs - Chờ 5 epochs trước khi giảm
+- Verbose: True - Hiển thị thông báo khi giảm LR
+
+2. Tại sao cần:
+
+- Giai đoạn đầu: Learning rate cao giúp mô hình học nhanh
+- Giai đoạn cuối: Learning rate thấp giúp mô hình tinh chỉnh và hội tụ tốt hơn
+- Tránh overshooting: Learning rate quá cao có thể làm mô hình "nhảy qua" điểm tối ưu
+
+3.2.5. Chiến lược Training nhiều Backbone (Multi-Backbone Training Strategy)
+
+a) Lý do train nhiều Backbone:
+
+Để đảm bảo chọn được mô hình tốt nhất cho bài toán cụ thể, đề tài train và so sánh ba backbone models khác nhau. Mỗi backbone có những đặc điểm riêng về độ chính xác, tốc độ xử lý, và kích thước mô hình, phù hợp với các yêu cầu khác nhau.
+
+b) Chiến lược Training:
+
+1. Tách riêng từng Model:
+
+- Mỗi backbone được train trong một cell riêng biệt trong notebook
+- Lợi ích:
+  + Tránh memory leak: Mỗi model được train xong sẽ được giải phóng memory trước khi train model tiếp theo
+  + Dễ debug: Có thể train từng model riêng, dễ phát hiện lỗi
+  + Dễ monitor: Theo dõi từng model một cách độc lập
+  + Linh hoạt: Có thể train lại một model cụ thể mà không ảnh hưởng đến các model khác
+
+2. Load/Save Results:
+
+- Persistence: Kết quả training được lưu vào files (JSON) để persist giữa các sessions
+- Hàm load_results_summary_from_files(): Tự động load kết quả từ files khi restart kernel
+- Lợi ích:
+  + Không mất kết quả: Có thể restart kernel mà không mất kết quả đã train
+  + So sánh dễ dàng: Có thể so sánh kết quả của nhiều lần train khác nhau
+  + Tổ chức tốt: Kết quả được lưu có hệ thống, dễ quản lý
+
+3. Retrain Mode:
+
+- Tự động phát hiện: Hệ thống tự động phát hiện khi retrain với improved weights (POISONOUS_WEIGHT_MULTIPLIER >= 4.0)
+- Xóa kết quả cũ: Tự động xóa kết quả cũ của cùng backbone để tránh nhầm lẫn
+- Đánh dấu: Lưu với suffix "_improved" để phân biệt với version cũ
+- Lợi ích: Có thể so sánh performance giữa standard weights và improved weights
+
+c) Kết quả Training cho mỗi Model:
+
+Sau khi training hoàn tất, mỗi backbone model tạo ra một bộ kết quả đầy đủ:
+
+- Best model checkpoint (.pth): File chứa weights của mô hình tốt nhất, có thể load lại để sử dụng
+- Training curves (PNG): Biểu đồ loss và accuracy để phân tích quá trình training
+- Confusion matrix (PNG): Ma trận nhầm lẫn để xem mô hình nhầm lẫn giữa các lớp nào
+- Classification report (JSON + TXT): Báo cáo chi tiết với precision, recall, F1-score cho từng lớp
+- Training summary (JSON): Tóm tắt training với tất cả thông tin cần thiết
+- Training log (TXT): Log file chi tiết của toàn bộ quá trình training
+
+3.2.6. Kết luận
+
+Quy trình huấn luyện trong đề tài đã được thiết kế một cách toàn diện và chuyên nghiệp với các đặc điểm sau:
+
+- Cơ chế training hiệu quả: Sử dụng Mixed Precision Training để tăng tốc và giảm memory, Differential Learning Rates để tối ưu fine-tuning, và Early Stopping để tránh overfitting. Các kỹ thuật này đảm bảo mô hình học hiệu quả và ổn định.
+
+- Chiến lược validation tối ưu: Validation được tối ưu hóa để tiết kiệm tài nguyên (không tính gradients, sử dụng Mixed Precision) trong khi vẫn đảm bảo đánh giá chính xác khả năng generalization của mô hình. Validation metrics được sử dụng cho Early Stopping, Model Selection, và Learning Rate Scheduling.
+
+- Hệ thống monitoring đầy đủ: Logging system ghi lại toàn bộ quá trình training, progress visualization giúp theo dõi real-time, training curves visualization cho phép phân tích xu hướng, và model checkpointing đảm bảo không mất mô hình tốt nhất.
+
+- Xử lý lỗi robust: Hệ thống được thiết kế để xử lý lỗi một cách graceful, không làm dừng toàn bộ quá trình training khi có lỗi nhỏ, và vẫn cố gắng lưu kết quả đã train được.
+
+- Hỗ trợ multi-backbone: Hệ thống có thể train và so sánh nhiều backbone models một cách độc lập, với khả năng persist kết quả giữa các sessions và hỗ trợ retrain mode.
+
+Các cơ chế này đảm bảo quá trình training ổn định, hiệu quả và có thể theo dõi được, tạo nền tảng vững chắc cho việc đạt được kết quả tốt trong việc phân loại 11 chi nấm. Quy trình này không chỉ đảm bảo tính khoa học mà còn đảm bảo tính thực tiễn, có thể áp dụng trong các dự án thực tế.

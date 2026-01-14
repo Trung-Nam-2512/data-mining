@@ -1,4 +1,0 @@
-"""
-Mushroom Classification System
-"""
-

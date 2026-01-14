@@ -1,0 +1,182 @@
+2.2. TIỀN XỬ LÝ DỮ LIỆU
+
+Tiền xử lý dữ liệu là bước quan trọng nhằm nâng cao chất lượng dữ liệu đầu vào và cải thiện hiệu quả của mô hình học máy. Trong đề tài này, các bước tiền xử lý chính được thực hiện như sau:
+
+2.2.1. Tổng quan về Dataset
+
+Dataset được sử dụng trong đề tài bao gồm:
+- Tổng số ảnh: 7,766 ảnh (sau khi lọc 1 ảnh corrupted)
+- Source Domain: 6,713 ảnh (86.4%) - 9 chi nấm (Agaricus, Amanita, Boletus, Cortinarius, Entoloma, Hygrocybe, Lactarius, Russula, Suillus)
+- Target Domain: 1,053 ảnh (13.6%) - 2 chi nấm (Exidia, Inocybe)
+- Phân phối độc tính:
+  + Poisonous (P): 2,568 ảnh (33.1%) - 4 chi nấm (Amanita, Cortinarius, Entoloma, Inocybe)
+  + Edible (E): 5,198 ảnh (66.9%) - 7 chi nấm
+- Phân phối classes có sự chênh lệch lớn: từ 218 mẫu (Suillus) đến 1,563 mẫu (Lactarius)
+
+2.2.2. Nạp dữ liệu (Data Loading)
+
+Hàm load_data_paths() được triển khai để nạp đường dẫn tất cả các ảnh và labels tương ứng:
+
+- Load dữ liệu từ Source Domain: Duyệt qua 9 thư mục tương ứng với 9 chi nấm, tìm tất cả file ảnh .jpg và gán label tương ứng
+- Load dữ liệu từ Target Domain: Duyệt qua 2 thư mục (Exidia, Inocybe), tìm tất cả file ảnh .jpg và gán label tương ứng
+- Kết quả: Trả về danh sách image_paths và labels tương ứng, với labels được mã hóa từ 0 đến 10 (11 classes)
+
+2.2.3. Kiểm tra và lọc ảnh corrupted
+
+Trước khi training, hệ thống thực hiện pre-filtering để loại bỏ các ảnh corrupted hoặc truncated:
+
+- Quy trình:
+  + Duyệt qua tất cả ảnh trong dataset
+  + Sử dụng PIL Image.verify() để kiểm tra tính hợp lệ của ảnh
+  + Mở lại ảnh và convert sang RGB để đảm bảo format đúng
+  + Kiểm tra kích thước hợp lệ (width > 0 và height > 0)
+  + Loại bỏ các ảnh không đáp ứng yêu cầu
+
+- Kết quả: Loại bỏ 1 ảnh corrupted từ tổng số 7,767 ảnh ban đầu, còn lại 7,766 ảnh hợp lệ
+
+2.2.4. Phân tích và trực quan hóa dataset (Data Exploration)
+
+Hệ thống thực hiện phân tích dataset để hiểu rõ phân phối dữ liệu:
+
+- Thống kê số lượng mẫu cho từng class
+- Phân tích phân phối Source Domain vs Target Domain
+- Phân tích phân phối độc tính (Poisonous vs Edible)
+- Trực quan hóa bằng 4 biểu đồ:
+  + Bar chart phân phối classes (màu đỏ cho nấm độc, màu xanh cho nấm ăn được)
+  + Pie chart phân phối phần trăm
+  + So sánh Source Domain vs Target Domain
+  + Phân phối độc tính
+
+Kết quả phân tích cho thấy sự chênh lệch lớn về số lượng mẫu giữa các chi nấm, đây là tiền đề cho việc áp dụng Class Weights ở bước sau.
+
+2.2.5. Xây dựng lớp dữ liệu tùy chỉnh (Custom Dataset Class)
+
+Thay vì sử dụng các hàm load ảnh thông thường, dự án triển khai lớp MushroomDataset kế thừa từ torch.utils.data.Dataset với các đặc điểm sau:
+
+a) Tư duy thiết kế:
+- Lớp này đóng vai trò là một "Interface" giúp kết nối giữa dữ liệu thô (đường dẫn ảnh) và mô hình
+- Cho phép áp dụng các phép biến đổi (transforms) một cách linh hoạt
+- Hỗ trợ lazy loading: chỉ load ảnh khi được yêu cầu (trong __getitem__), tiết kiệm memory
+
+b) Xử lý lỗi (Robustness):
+- Nếu một file ảnh bị lỗi trong quá trình đọc, hệ thống sẽ tự động thay thế bằng một ảnh đen (fallback) thay vì làm dừng toàn bộ quá trình huấn luyện
+- Điều này đảm bảo tính ổn định của quá trình training, đặc biệt quan trọng khi làm việc với dataset lớn
+
+c) Tính linh hoạt:
+- Hỗ trợ đồng thời cả torchvision transforms và Albumentations
+- Cho phép chuyển đổi dễ dàng giữa các thư viện augmentation
+- Trong đề tài này, sử dụng torchvision transforms vì đã đạt kết quả tốt (91.37% accuracy) và tránh augmentation quá mạnh làm ảnh bị biến dạng
+
+d) Cấu trúc lớp:
+- __init__(): Khởi tạo với image_paths, labels, transform, và use_albumentations flag
+- __len__(): Trả về số lượng ảnh trong dataset
+- __getitem__(): Load ảnh tại index idx, áp dụng transform, và trả về (image_tensor, label)
+
+2.2.6. Data Augmentation
+
+Data augmentation là kỹ thuật quan trọng để tăng độ đa dạng của dữ liệu training, giúp mô hình học được các đặc trưng tổng quát hơn và chống overfitting.
+
+a) Training Transforms (với augmentation):
+Hệ thống sử dụng pipeline augmentation nâng cao với 9 loại biến đổi:
+
+1. Resize((256, 256)): Resize ảnh về kích thước 256x256 pixels
+2. RandomCrop(224): Random crop về 224x224 pixels (kích thước chuẩn cho ImageNet pre-trained models)
+3. RandomHorizontalFlip(p=0.5): Lật ngang ngẫu nhiên với xác suất 50%
+4. RandomVerticalFlip(p=0.3): Lật dọc ngẫu nhiên với xác suất 30% (nấm có thể ở nhiều góc độ)
+5. RandomRotation(15): Xoay ngẫu nhiên trong khoảng -15° đến +15°
+6. RandomAffine(degrees=0, translate=(0.1, 0.1), scale=(0.9, 1.1)): Biến đổi affine với translation và scaling
+7. ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2, hue=0.1): Thay đổi độ sáng, độ tương phản, độ bão hòa và màu sắc
+8. RandomApply([GaussianBlur(kernel_size=3, sigma=(0.1, 2.0))], p=0.2): Áp dụng Gaussian blur với xác suất 20% (mô phỏng ảnh mờ)
+9. RandomErasing(p=0.1, scale=(0.02, 0.33), ratio=(0.3, 3.3)): Xóa ngẫu nhiên một phần ảnh với xác suất 10% để chống overfitting
+
+Sau đó:
+- ToTensor(): Chuyển từ PIL Image sang PyTorch Tensor (C, H, W) với giá trị [0, 1]
+- Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]): Normalize theo chuẩn ImageNet (chuẩn cho pre-trained models)
+
+b) Validation/Test Transforms (không augmentation):
+- Resize((224, 224)): Resize về 224x224 pixels
+- ToTensor(): Chuyển sang Tensor
+- Normalize: Normalize theo chuẩn ImageNet
+
+Lý do không dùng augmentation cho validation/test: Đảm bảo đánh giá công bằng và nhất quán, không bị ảnh hưởng bởi các biến đổi ngẫu nhiên.
+
+2.2.7. Chia dataset (Data Splitting)
+
+Dataset được chia thành 3 tập: Training (70%), Validation (15%), và Test (15%) với các đặc điểm:
+
+a) Stratified Sampling:
+- Sử dụng train_test_split từ sklearn với tham số stratify=labels
+- Đảm bảo phân phối classes đồng đều trong cả 3 tập train/val/test
+- Tránh trường hợp một class chỉ xuất hiện trong một tập, gây bias trong đánh giá
+
+b) Quy trình chia:
+- Bước 1: Chia train (70%) và temp (30%) với stratify
+- Bước 2: Chia temp thành val (15%) và test (15%) với stratify
+- Random seed: 42 để đảm bảo kết quả có thể tái lập
+
+c) Kết quả:
+- Training set: 5,436 ảnh (70.0%)
+- Validation set: 1,165 ảnh (15.0%)
+- Test set: 1,165 ảnh (15.0%)
+
+d) Tạo 3 Dataset objects riêng biệt:
+- train_dataset: Sử dụng train_transform (có augmentation)
+- val_dataset: Sử dụng val_test_transform (không augmentation)
+- test_dataset: Sử dụng val_test_transform (không augmentation)
+
+Mỗi dataset là đối tượng độc lập, không chia sẻ transform, tránh lỗi "Transformation Leakage" (data leakage).
+
+2.2.8. Tạo DataLoaders
+
+DataLoaders được tạo với các cấu hình tối ưu cho hardware:
+
+a) Training DataLoader:
+- batch_size: 192 (tự động tối ưu theo GPU VRAM - A6000: 192, RTX 3090: 96)
+- shuffle: True (xáo trộn dữ liệu mỗi epoch để tránh overfitting)
+- num_workers: 32 (tự động tối ưu theo CPU cores - A6000: 32, RTX 3090: 8)
+- pin_memory: True (chỉ bật cho GPU, tăng tốc transfer data từ CPU sang GPU)
+- prefetch_factor: 4 (tăng tốc loading bằng cách preload batches)
+- persistent_workers: True (giữ workers sống giữa các epochs, giảm overhead)
+
+b) Validation DataLoader:
+- batch_size: 192
+- shuffle: False (không shuffle để đảm bảo đánh giá nhất quán)
+- Các tham số khác giống training loader
+
+c) Test DataLoader:
+- batch_size: 192
+- shuffle: False
+- Các tham số khác giống training loader
+
+d) Kết quả:
+- Train batches: 29 batches (5,436 ảnh / 192 batch_size)
+- Validation batches: 7 batches (1,165 ảnh / 192 batch_size)
+- Test batches: 7 batches (1,165 ảnh / 192 batch_size)
+
+2.2.9. Tối ưu hóa hardware
+
+Hệ thống tự động detect và tối ưu các tham số theo hardware:
+
+a) GPU Detection:
+- Tự động phát hiện GPU và cấu hình tối ưu
+- A6000 (48GB VRAM, 80 CPU cores): batch_size=192, num_workers=32, prefetch_factor=4
+- RTX 3090 (24GB VRAM, 13 CPU cores): batch_size=96, num_workers=8, prefetch_factor=2
+- CPU mode: batch_size=16, num_workers=0
+
+b) Memory Management:
+- pin_memory: Chỉ bật cho GPU để tăng tốc data transfer
+- persistent_workers: Giữ workers sống giữa epochs để giảm overhead
+- prefetch_factor: Preload batches để tăng throughput
+
+2.2.10. Kết luận
+
+Quá trình tiền xử lý dữ liệu trong đề tài đã được thực hiện một cách toàn diện và chuyên nghiệp:
+
+- Đảm bảo chất lượng dữ liệu: Pre-filtering corrupted images, error handling robust
+- Tăng độ đa dạng dữ liệu: Data augmentation với 9 loại biến đổi
+- Đảm bảo phân phối đồng đều: Stratified sampling cho train/val/test split
+- Tối ưu hiệu năng: Hardware-aware optimization, persistent workers, prefetch
+- Tính linh hoạt: Custom Dataset class hỗ trợ nhiều loại transforms
+
+Các bước tiền xử lý này tạo nền tảng vững chắc cho quá trình training, góp phần đạt được kết quả cao (91.59% accuracy với ResNet-50).
+

@@ -1,0 +1,549 @@
+4.1. HỆ THỐNG ĐÁNH GIÁ VÀ ĐO LƯỜNG HIỆU NĂNG (EVALUATION METRICS)
+
+Đánh giá và đo lường hiệu năng là bước quan trọng để xác định chất lượng của mô hình học máy sau khi huấn luyện. Một hệ thống đánh giá toàn diện không chỉ cung cấp các số liệu tổng quan mà còn phân tích chi tiết performance của mô hình trên từng lớp, phát hiện các điểm yếu và điểm mạnh, từ đó hỗ trợ việc cải thiện mô hình. Trong đề tài này, hệ thống đánh giá được thiết kế với nhiều metrics khác nhau để đảm bảo đánh giá toàn diện và chính xác.
+
+4.1.1. Cơ chế thu thập kết quả dự đoán (Inference Logic)
+
+a) Khái niệm về Inference:
+
+Inference (suy luận) là quá trình sử dụng mô hình đã được huấn luyện để đưa ra dự đoán trên dữ liệu mới. Khác với quá trình training, inference không cần tính toán gradients và cập nhật weights, chỉ cần thực hiện forward pass để nhận được kết quả dự đoán.
+
+b) Quy trình Inference trong Evaluation:
+
+Hàm evaluate_on_loader() được thiết kế để đánh giá mô hình trên một dataset (thường là test set) với quy trình sau:
+
+1. Chuyển mô hình sang chế độ evaluation:
+
+model.eval() đảm bảo:
+- Tắt Dropout: Tất cả neurons đều hoạt động để có kết quả nhất quán
+- Batch Normalization ở eval mode: Sử dụng running statistics đã được tính trong training
+- Không cập nhật running statistics: Đảm bảo kết quả ổn định
+
+2. Tắt gradient computation:
+
+with torch.no_grad(): 
+- Không tính gradients: Tiết kiệm memory và tăng tốc độ
+- Quan trọng: Inference không cần gradients, việc tính gradients là lãng phí tài nguyên
+
+3. Thu thập predictions và labels:
+
+Với mỗi batch trong data loader:
+- Chuyển dữ liệu lên device: images và labels được chuyển lên GPU (nếu có) hoặc giữ trên CPU
+- Forward pass: outputs = model(images) - đưa ảnh qua mô hình để nhận logits
+- Lấy predictions: _, preds = torch.max(outputs, 1) - tìm lớp có điểm số cao nhất
+- Lưu trữ: 
+  + all_labels: Lưu tất cả labels thực tế
+  + all_preds: Lưu tất cả predictions
+
+4. Tính toán metrics:
+
+Sau khi thu thập đầy đủ predictions và labels cho toàn bộ dataset:
+- Accuracy: Sử dụng accuracy_score() từ sklearn để tính tỷ lệ dự đoán đúng
+- Classification Report: Sử dụng classification_report() để tính precision, recall, F1-score cho từng lớp
+- Confusion Matrix: Sử dụng confusion_matrix() để tạo ma trận nhầm lẫn
+
+c) Đặc điểm của Inference trong Evaluation:
+
+- Batch Processing: Xử lý theo batch để tận dụng GPU parallelism và quản lý memory hiệu quả
+- Không shuffle: Test loader không shuffle để đảm bảo kết quả nhất quán và có thể tái tạo
+- Mixed Precision: Có thể sử dụng FP16 để tăng tốc inference nếu được bật
+- Memory Efficient: Không lưu trữ gradients, chỉ lưu predictions và labels (số lượng nhỏ)
+
+d) Output của Inference:
+
+Hàm evaluate_on_loader() trả về ba giá trị:
+- acc: Overall accuracy (tỷ lệ dự đoán đúng tổng thể)
+- report: Dictionary chứa classification report với precision, recall, F1-score cho từng lớp và các averages
+- cm: Confusion matrix dưới dạng numpy array (11x11 cho 11 classes)
+
+e) Ví dụ kết quả Inference:
+
+Khi đánh giá mô hình ResNet-50 trên test set (1,165 mẫu), hệ thống thu thập được:
+- Tổng số predictions: 1,165
+- Tổng số labels thực tế: 1,165
+- Overall Test Accuracy: 91.59% (1,067/1,165 mẫu được dự đoán đúng)
+- Thời gian inference: Khoảng 12-15 giây trên GPU RTX A6000 với batch size 192
+
+Kết quả này cho thấy mô hình có khả năng dự đoán chính xác trên dữ liệu mới, đạt được mục tiêu của đề tài.
+
+4.1.2. Phân tích đa chiều với Classification Report
+
+a) Khái niệm về Classification Report:
+
+Classification Report là một báo cáo chi tiết cung cấp các metrics đánh giá cho từng lớp riêng lẻ cũng như tổng thể. Đây là công cụ quan trọng để hiểu rõ mô hình hoạt động tốt hay kém trên từng lớp cụ thể, đặc biệt quan trọng trong bài toán phân loại đa lớp với dữ liệu mất cân bằng.
+
+b) Các Metrics cơ bản:
+
+1. Precision (Độ chính xác):
+
+Precision đo lường trong số các dự đoán dương tính (positive predictions), có bao nhiêu là đúng.
+
+Công thức: Precision = TP / (TP + FP)
+
+Trong đó:
+- TP (True Positive): Số mẫu được dự đoán đúng là lớp i và thực tế cũng là lớp i
+- FP (False Positive): Số mẫu được dự đoán là lớp i nhưng thực tế là lớp khác
+
+Ý nghĩa: Precision cao nghĩa là khi mô hình dự đoán một mẫu thuộc lớp i, khả năng đúng là cao. Điều này quan trọng khi chi phí của False Positive cao (ví dụ: dự đoán nấm độc nhưng thực tế là nấm ăn được có thể gây hoang mang không cần thiết).
+
+2. Recall (Độ nhạy / Tỷ lệ phát hiện):
+
+Recall đo lường trong số các mẫu thực tế thuộc lớp i, mô hình phát hiện được bao nhiêu.
+
+Công thức: Recall = TP / (TP + FN)
+
+Trong đó:
+- TP (True Positive): Số mẫu được dự đoán đúng là lớp i
+- FN (False Negative): Số mẫu thực tế là lớp i nhưng bị dự đoán sai thành lớp khác
+
+Ý nghĩa: Recall cao nghĩa là mô hình có khả năng phát hiện được hầu hết các mẫu thuộc lớp i. Điều này đặc biệt quan trọng trong bài toán phân loại nấm, nơi việc bỏ sót nấm độc (False Negative) có thể gây nguy hiểm đến tính mạng. Do đó, recall cao cho các chi nấm độc là yêu cầu bắt buộc.
+
+3. F1-Score (Điểm F1):
+
+F1-Score là trung bình điều hòa (harmonic mean) của Precision và Recall, cung cấp một metric cân bằng giữa hai metrics trên.
+
+Công thức: F1-Score = 2 × (Precision × Recall) / (Precision + Recall)
+
+Ý nghĩa: F1-Score cung cấp một số liệu tổng hợp, cân bằng giữa Precision và Recall. F1-Score cao nghĩa là cả Precision và Recall đều tốt. Đây là metric phổ biến để so sánh performance giữa các mô hình hoặc các lớp.
+
+4. Support:
+
+Support là số lượng mẫu thực tế thuộc lớp đó trong test set. Support cho biết có bao nhiêu mẫu để đánh giá performance của lớp đó.
+
+Ý nghĩa: Support cao nghĩa là có nhiều dữ liệu để đánh giá, kết quả đáng tin cậy hơn. Support thấp có thể dẫn đến metrics không ổn định.
+
+c) Các loại Average trong Classification Report:
+
+1. Macro Average:
+
+Macro Average tính trung bình đơn giản (arithmetic mean) của các metrics trên tất cả các lớp, mỗi lớp có trọng số bằng nhau.
+
+Công thức: Macro Avg = (Metric_class1 + Metric_class2 + ... + Metric_class11) / 11
+
+Ý nghĩa: Macro Average cho biết performance trung bình của mô hình trên tất cả các lớp, không quan tâm đến số lượng mẫu của mỗi lớp. Điều này quan trọng khi muốn đánh giá công bằng giữa các lớp, đặc biệt khi có sự mất cân bằng dữ liệu.
+
+Ví dụ: Nếu một lớp có 1,000 mẫu và một lớp có 100 mẫu, macro average sẽ đối xử cả hai như nhau, trong khi weighted average sẽ ưu tiên lớp có nhiều mẫu hơn.
+
+2. Weighted Average:
+
+Weighted Average tính trung bình có trọng số của các metrics, trọng số là số lượng mẫu (support) của mỗi lớp.
+
+Công thức: Weighted Avg = Σ(Metric_i × Support_i) / Σ(Support_i)
+
+Ý nghĩa: Weighted Average phản ánh performance tổng thể của mô hình, có tính đến số lượng mẫu của mỗi lớp. Lớp có nhiều mẫu hơn sẽ có ảnh hưởng lớn hơn đến weighted average. Đây là metric phù hợp khi muốn đánh giá performance trên toàn bộ dataset.
+
+3. Accuracy (Overall):
+
+Accuracy là tỷ lệ dự đoán đúng trên toàn bộ test set, không phân biệt lớp.
+
+Công thức: Accuracy = (Tổng số dự đoán đúng) / (Tổng số mẫu)
+
+Ý nghĩa: Accuracy cung cấp một số liệu tổng quan, dễ hiểu về performance của mô hình. Tuy nhiên, trong bài toán mất cân bằng dữ liệu, accuracy có thể không phản ánh đúng performance trên các lớp thiểu số.
+
+d) Phân tích Classification Report trong đề tài:
+
+Classification Report được tính toán và lưu trữ dưới hai định dạng:
+
+1. JSON Format:
+
+Lưu trữ dưới dạng JSON cho phép:
+- Dễ dàng load và phân tích bằng code
+- Tự động hóa việc so sánh giữa các models
+- Tích hợp vào các hệ thống báo cáo tự động
+
+Nội dung JSON bao gồm:
+- Metrics cho từng lớp: precision, recall, f1-score, support
+- Overall accuracy
+- Macro average: precision, recall, f1-score, support
+- Weighted average: precision, recall, f1-score, support
+
+2. Text Format:
+
+Lưu trữ dưới dạng text (TXT) cho phép:
+- Dễ đọc trực tiếp bằng người
+- In ra báo cáo hoặc tài liệu
+- Format đẹp với bảng có cột và hàng rõ ràng
+
+Format text bao gồm:
+- Header với tên model và overall accuracy
+- Bảng metrics cho từng lớp với các cột: Class, Precision, Recall, F1-Score, Support
+- Macro và Weighted averages ở cuối
+
+[CHÈN ẢNH: Bảng Classification Report mẫu - có thể là screenshot từ file TXT hoặc bảng được format đẹp]
+
+d) Ví dụ kết quả Classification Report:
+
+Dưới đây là ví dụ Classification Report của mô hình ResNet-50 trên test set, minh họa cho các metrics đã trình bày:
+
+**Overall Accuracy**: 91.59% (1,067/1,165 mẫu)
+
+**Ví dụ metrics cho một số lớp quan trọng:**
+
+1. **Amanita (Nấm độc)**:
+   - Precision: 90.27% - Khi mô hình dự đoán Amanita, 90.27% là đúng
+   - Recall: 91.07% - Mô hình phát hiện được 91.07% số mẫu Amanita thực tế
+   - F1-Score: 90.67% - Điểm cân bằng giữa Precision và Recall
+   - Support: 112 mẫu trong test set
+   - **Phân tích**: Recall 91.07% đạt mục tiêu >= 90% cho nấm độc, đảm bảo an toàn
+
+2. **Boletus (Nấm ăn được)**:
+   - Precision: 96.27% - Dự đoán rất chính xác
+   - Recall: 96.27% - Phát hiện tốt
+   - F1-Score: 96.27% - Performance xuất sắc
+   - Support: 161 mẫu
+   - **Phân tích**: Lớp có performance tốt nhất, dễ phân biệt
+
+3. **Exidia (Nấm ăn được, từ Target Domain)**:
+   - Precision: 100% - Tất cả dự đoán đều đúng
+   - Recall: 100% - Phát hiện tất cả mẫu
+   - F1-Score: 100% - Hoàn hảo
+   - Support: 65 mẫu
+   - **Phân tích**: Mô hình tổng quát hóa tốt sang Target Domain
+
+4. **Agaricus (Nấm ăn được)**:
+   - Precision: 80.77% - Có một số dự đoán sai
+   - Recall: 79.25% - Một số mẫu bị bỏ sót
+   - F1-Score: 80.00% - Performance thấp nhất trong các lớp
+   - Support: 53 mẫu
+   - **Phân tích**: Lớp cần cải thiện, có thể do ít dữ liệu training
+
+**Macro Average**:
+- Precision: 90.64% - Trung bình công bằng trên tất cả 11 lớp
+- Recall: 90.64% - Phản ánh performance trung bình
+- F1-Score: 90.57% - Điểm tổng hợp cân bằng
+
+**Weighted Average**:
+- Precision: 91.67% - Có tính đến số lượng mẫu của mỗi lớp
+- Recall: 91.59% - Gần với Overall Accuracy
+- F1-Score: 91.59% - Phản ánh performance tổng thể
+
+Các kết quả này cho thấy mô hình hoạt động tốt trên hầu hết các lớp, đặc biệt là các lớp nấm độc đạt được recall >= 90% như mục tiêu đề ra.
+
+e) Ứng dụng của Classification Report:
+
+- Phát hiện lớp yếu: Xác định lớp nào có performance thấp (precision, recall, hoặc F1-score thấp)
+- Đánh giá hiệu quả của class weights: So sánh performance của các lớp nấm độc trước và sau khi áp dụng class weights 4x
+- So sánh giữa các models: So sánh performance của cùng một lớp giữa các backbone models khác nhau
+- Hướng dẫn cải thiện: Xác định lớp nào cần cải thiện và tập trung vào lớp đó
+
+4.1.3. Ma trận nhầm lẫn (Confusion Matrix)
+
+a) Khái niệm về Confusion Matrix:
+
+Confusion Matrix (Ma trận nhầm lẫn) là một bảng hai chiều được sử dụng để đánh giá performance của mô hình phân loại. Ma trận này cho thấy số lượng mẫu được phân loại đúng và sai giữa các lớp, cung cấp cái nhìn chi tiết về các loại lỗi mà mô hình mắc phải.
+
+b) Cấu trúc của Confusion Matrix:
+
+Với bài toán phân loại 11 lớp, Confusion Matrix có kích thước 11×11:
+
+- Hàng (Rows): Đại diện cho True Labels (nhãn thực tế)
+- Cột (Columns): Đại diện cho Predicted Labels (nhãn dự đoán)
+- Giá trị tại vị trí (i, j): Số lượng mẫu có true label là lớp i và được dự đoán là lớp j
+
+Cấu trúc ma trận:
+```
+                    Predicted
+                C1  C2  C3  ... C11
+True    C1     [a  b   c   ... x ]
+        C2     [d  e   f   ... y ]
+        C3     [g  h   i   ... z ]
+        ...
+        C11    [m  n   o   ... w ]
+```
+
+Trong đó:
+- Đường chéo chính (từ trên trái xuống dưới phải): Các giá trị đúng (True Positives cho mỗi lớp)
+- Các giá trị ngoài đường chéo: Các giá trị sai (False Positives và False Negatives)
+
+c) Cách đọc Confusion Matrix:
+
+1. Đọc theo hàng (True Label):
+
+Khi đọc theo hàng, ta xem mô hình dự đoán các mẫu thực tế thuộc lớp i như thế nào:
+- Giá trị trên đường chéo (i, i): Số mẫu được dự đoán đúng là lớp i
+- Các giá trị khác trong hàng i: Số mẫu bị dự đoán sai thành các lớp khác
+
+Ví dụ: Hàng "Amanita" cho biết trong số các mẫu thực tế là Amanita, bao nhiêu được dự đoán đúng là Amanita, bao nhiêu bị nhầm thành lớp khác (ví dụ: Cortinarius, Inocybe).
+
+2. Đọc theo cột (Predicted Label):
+
+Khi đọc theo cột, ta xem các mẫu được dự đoán là lớp j thực tế thuộc lớp nào:
+- Giá trị trên đường chéo (j, j): Số mẫu được dự đoán đúng là lớp j
+- Các giá trị khác trong cột j: Số mẫu thực tế thuộc các lớp khác nhưng bị dự đoán sai thành lớp j
+
+Ví dụ: Cột "Amanita" cho biết trong số các mẫu được dự đoán là Amanita, bao nhiêu thực tế là Amanita, bao nhiêu thực tế là lớp khác.
+
+3. Tính toán các metrics từ Confusion Matrix:
+
+Từ Confusion Matrix, có thể tính toán các metrics:
+
+- True Positive (TP) cho lớp i: Giá trị tại (i, i)
+- False Positive (FP) cho lớp i: Tổng cột i trừ đi TP
+- False Negative (FN) cho lớp i: Tổng hàng i trừ đi TP
+- True Negative (TN) cho lớp i: Tổng tất cả các giá trị trừ đi TP, FP, FN
+
+Sau đó có thể tính:
+- Precision = TP / (TP + FP)
+- Recall = TP / (TP + FN)
+- F1-Score = 2 × (Precision × Recall) / (Precision + Recall)
+
+d) Visualization của Confusion Matrix:
+
+Trong đề tài, Confusion Matrix được visualize bằng heatmap sử dụng seaborn:
+
+1. Cấu hình Visualization:
+
+- Kích thước: 12×10 inches để đủ lớn cho 11×11 matrix
+- Colormap: 'Blues' - màu xanh dương, giá trị cao hơn có màu đậm hơn
+- Annotations: Hiển thị số lượng (fmt='d') trong mỗi ô
+- Labels: Hiển thị tên lớp trên cả trục X và Y
+- Rotation: X-axis labels xoay 45° để tránh chồng chéo
+- Colorbar: Hiển thị scale màu để dễ đọc giá trị
+
+2. Ý nghĩa của màu sắc:
+
+- Màu đậm: Giá trị cao (nhiều mẫu)
+- Màu nhạt: Giá trị thấp (ít mẫu)
+- Đường chéo chính: Thường có màu đậm nhất vì đây là các giá trị đúng
+
+3. Phân tích từ Visualization:
+
+- Đường chéo đậm: Mô hình dự đoán tốt cho các lớp đó
+- Ô ngoài đường chéo có giá trị cao: Cho biết các lớp dễ bị nhầm lẫn với nhau
+- Hàng có nhiều giá trị phân tán: Lớp đó dễ bị nhầm thành nhiều lớp khác
+- Cột có nhiều giá trị phân tán: Nhiều lớp khác nhau bị nhầm thành lớp đó
+
+[CHÈN ẢNH: Confusion Matrix visualization cho một trong các models - file confusion_matrix_{backbone_name}_{timestamp}.png]
+
+d) Ví dụ phân tích Confusion Matrix:
+
+Dựa trên Confusion Matrix của mô hình ResNet-50 trên test set, có thể rút ra các nhận xét sau:
+
+1. **Đường chéo chính (True Positives)**:
+   - Exidia: 65/65 mẫu đúng (100%) - Hoàn hảo
+   - Boletus: 155/161 mẫu đúng (96.27%) - Rất tốt
+   - Lactarius: 219/235 mẫu đúng (93.19%) - Tốt
+   - Amanita: 102/112 mẫu đúng (91.07%) - Đạt mục tiêu cho nấm độc
+
+2. **Nhầm lẫn giữa các lớp nấm độc**:
+   - Một số mẫu Amanita bị nhầm thành Cortinarius (2 mẫu) - Hai lớp này có hình dạng tương tự
+   - Một số mẫu Entoloma bị nhầm thành Inocybe (1 mẫu) - Cả hai đều là nấm độc, ít nguy hiểm hơn
+
+3. **Nhầm lẫn giữa các lớp nấm ăn được**:
+   - Một số mẫu Agaricus bị nhầm thành các lớp khác (11 mẫu sai) - Lớp có performance thấp nhất
+   - Boletus và Russula ít bị nhầm lẫn - Dễ phân biệt
+
+4. **Nhầm lẫn giữa nấm độc và nấm ăn được** (Quan trọng nhất):
+   - False Negatives cho nấm độc: Rất ít (chỉ 1-2 mẫu cho mỗi lớp nấm độc) - Đảm bảo an toàn
+   - False Positives (dự đoán nấm độc nhưng thực tế là nấm ăn được): Có một số trường hợp, nhưng ít nguy hiểm hơn False Negatives
+
+5. **Tổng số lỗi**:
+   - Tổng số dự đoán sai: 98/1,165 (8.41%)
+   - Phần lớn lỗi là giữa các lớp cùng nhóm (độc với độc, ăn được với ăn được)
+   - Rất ít lỗi giữa nhóm độc và nhóm ăn được - Đảm bảo an toàn
+
+Phân tích này cho thấy mô hình đạt được mục tiêu quan trọng nhất: Phát hiện chính xác nấm độc (recall cao) để đảm bảo an toàn cho người dùng.
+
+e) Ứng dụng của Confusion Matrix:
+
+1. Phát hiện nhầm lẫn giữa các lớp:
+
+Confusion Matrix cho thấy rõ các cặp lớp dễ bị nhầm lẫn với nhau. Ví dụ:
+- Nếu có nhiều mẫu Amanita bị nhầm thành Cortinarius: Hai lớp này có đặc điểm tương tự
+- Nếu có nhiều mẫu Boletus bị nhầm thành Russula: Cần cải thiện khả năng phân biệt
+
+2. Đánh giá hiệu quả của class weights:
+
+So sánh Confusion Matrix trước và sau khi áp dụng class weights 4x cho nấm độc:
+- Trước: Có thể có nhiều False Negatives cho nấm độc (nấm độc bị nhầm thành nấm ăn được)
+- Sau: Giảm False Negatives, tăng True Positives cho nấm độc
+
+3. Hướng dẫn cải thiện dataset:
+
+Nếu hai lớp thường xuyên bị nhầm lẫn:
+- Có thể cần thêm dữ liệu training cho các cặp lớp đó
+- Có thể cần data augmentation đặc biệt để làm nổi bật sự khác biệt
+- Có thể cần xem xét lại việc gán nhãn (có thể có nhãn sai)
+
+4. So sánh giữa các models:
+
+So sánh Confusion Matrix của các backbone models khác nhau:
+- Model nào có đường chéo đậm hơn: Dự đoán chính xác hơn
+- Model nào có ít giá trị ngoài đường chéo: Ít nhầm lẫn hơn
+
+f) Lưu trữ Confusion Matrix:
+
+- Định dạng: PNG với DPI 300 (độ phân giải cao)
+- Tên file: confusion_matrix_{backbone_name}_{timestamp}.png
+- Lưu tại: results/reports/
+- Mục đích: Sử dụng trong báo cáo, presentation, và phân tích
+
+4.1.4. Khả năng mở rộng và tổng quát hóa (Scalability and Generalization)
+
+a) Khái niệm về Generalization:
+
+Generalization (Tổng quát hóa) là khả năng của mô hình hoạt động tốt trên dữ liệu mới mà nó chưa từng thấy trong quá trình training. Một mô hình có khả năng tổng quát hóa tốt sẽ không chỉ học thuộc dữ liệu training (overfitting) mà còn học được các patterns tổng quát có thể áp dụng cho dữ liệu mới.
+
+b) Đánh giá Generalization trong đề tài:
+
+1. Train/Validation/Test Split:
+
+Dataset được chia thành ba tập độc lập:
+- Training set (70%): Dùng để huấn luyện mô hình
+- Validation set (15%): Dùng để điều chỉnh hyperparameters và early stopping
+- Test set (15%): Dùng để đánh giá cuối cùng, không được sử dụng trong quá trình training
+
+Tách biệt này đảm bảo:
+- Test set đại diện cho dữ liệu "hoàn toàn mới" mà mô hình chưa từng thấy
+- Performance trên test set phản ánh khả năng tổng quát hóa thực sự
+- Tránh data leakage (rò rỉ dữ liệu) - mô hình không thể "nhìn trước" test set
+
+2. Stratified Sampling:
+
+Việc sử dụng stratified sampling khi chia dataset đảm bảo:
+- Phân phối classes đồng đều trong cả ba tập train/val/test
+- Mỗi tập đều có đại diện của tất cả 11 lớp
+- Tránh trường hợp một lớp chỉ xuất hiện trong một tập
+
+3. So sánh Train vs Validation vs Test Accuracy:
+
+Một mô hình có khả năng tổng quát hóa tốt sẽ có:
+- Train accuracy và Validation accuracy gần nhau: Không overfit trên training data
+- Test accuracy gần với Validation accuracy: Khả năng tổng quát hóa tốt
+- Cả ba accuracy đều cao: Mô hình học tốt và tổng quát hóa tốt
+
+Nếu có sự chênh lệch lớn:
+- Train accuracy >> Validation accuracy: Overfitting - mô hình học thuộc training data
+- Validation accuracy >> Test accuracy: Có thể có vấn đề với cách chia data hoặc validation set không đại diện
+
+**Ví dụ kết quả thực tế (ResNet-50)**:
+- Training Accuracy (epoch cuối): ~92-93%
+- Validation Accuracy (best): 93.39%
+- Test Accuracy: 91.59%
+
+Phân tích:
+- Chênh lệch giữa Train và Validation: ~0-1% - Không có overfitting đáng kể
+- Chênh lệch giữa Validation và Test: ~1.8% - Khả năng tổng quát hóa tốt, test set đại diện cho dữ liệu mới
+- Cả ba accuracy đều > 90% - Mô hình học tốt và tổng quát hóa tốt
+
+c) Đánh giá trên Test Set:
+
+Test set được sử dụng để đánh giá cuối cùng sau khi training hoàn tất:
+
+1. Quy trình đánh giá:
+
+- Load best model: Sử dụng mô hình tốt nhất dựa trên validation accuracy, không phải mô hình cuối cùng
+- Evaluate: Chạy inference trên toàn bộ test set
+- Tính metrics: Accuracy, Classification Report, Confusion Matrix
+- Lưu kết quả: Lưu tất cả metrics để phân tích và so sánh
+
+2. Ý nghĩa của Test Accuracy:
+
+- Test accuracy là metric quan trọng nhất để đánh giá khả năng của mô hình
+- Phản ánh performance thực tế trên dữ liệu mới
+- Được sử dụng để so sánh giữa các models và chọn model tốt nhất
+
+**Kết quả Test Accuracy của các models**:
+- ResNet-50: 91.59% - Model tốt nhất
+- EfficientNet-B0: 88.33% - Model cân bằng
+- MobileNetV3-Large: 87.64% - Model nhanh nhất
+
+Kết quả này cho thấy ResNet-50 có khả năng tổng quát hóa tốt nhất trên dữ liệu mới, phù hợp để triển khai trong thực tế.
+
+3. Per-Class Performance trên Test Set:
+
+Classification Report trên test set cho biết:
+- Mô hình hoạt động tốt trên lớp nào
+- Mô hình hoạt động kém trên lớp nào
+- Các lớp dễ bị nhầm lẫn với nhau
+
+d) Khả năng mở rộng (Scalability):
+
+1. Đánh giá trên Dataset lớn:
+
+Mô hình được đánh giá trên test set với 1,165 mẫu, đủ lớn để:
+- Có ý nghĩa thống kê: Kết quả đáng tin cậy
+- Đại diện cho phân phối thực tế: Test set có phân phối tương tự dataset thực tế
+- Đánh giá performance trên các lớp thiểu số: Mỗi lớp có đủ mẫu để đánh giá
+
+2. Performance trên các Domain khác nhau:
+
+Dataset bao gồm cả Source Domain (9 classes) và Target Domain (2 classes):
+- Source Domain: 6,713 mẫu (86.4%)
+- Target Domain: 1,053 mẫu (13.6%)
+
+Đánh giá riêng performance trên từng domain cho biết:
+- Mô hình có thể tổng quát hóa từ Source sang Target Domain hay không
+- Có sự chênh lệch performance giữa hai domains hay không
+- Có cần thêm dữ liệu từ Target Domain hay không
+
+3. Performance trên các nhóm Toxicity:
+
+Đánh giá riêng performance trên nấm độc và nấm ăn được:
+- Nấm độc (4 classes): Đảm bảo recall cao để an toàn
+- Nấm ăn được (7 classes): Đảm bảo precision cao để tránh cảnh báo sai
+
+**Kết quả thực tế (ResNet-50)**:
+
+**Nhóm nấm độc (4 classes: Amanita, Cortinarius, Entoloma, Inocybe)**:
+- Average Recall: ~90.5% - Đạt mục tiêu >= 90%
+- Average Precision: ~88.5%
+- Average F1-Score: ~89.5%
+- **Phân tích**: Recall cao đảm bảo phát hiện được hầu hết nấm độc, giảm thiểu nguy cơ an toàn
+
+**Nhóm nấm ăn được (7 classes)**:
+- Average Recall: ~91.2%
+- Average Precision: ~93.5%
+- Average F1-Score: ~92.3%
+- **Phân tích**: Precision cao đảm bảo ít cảnh báo sai, tránh gây hoang mang không cần thiết
+
+Kết quả này cho thấy mô hình đạt được sự cân bằng tốt giữa an toàn (recall cao cho nấm độc) và độ tin cậy (precision cao cho nấm ăn được).
+
+e) Robustness Testing (Kiểm tra độ bền):
+
+1. Đánh giá trên nhiều ảnh mẫu:
+
+Hệ thống test trên 20 ảnh mẫu được chọn ngẫu nhiên từ test set:
+- 10 ảnh nấm độc: Kiểm tra khả năng phát hiện nấm độc
+- 10 ảnh nấm ăn được: Kiểm tra khả năng nhận diện nấm ăn được
+- Hiển thị predictions với confidence scores: Cho biết mô hình tự tin đến mức nào
+
+2. Phân tích Confidence Scores:
+
+- Confidence cao (>80%): Mô hình tự tin, có thể tin tưởng
+- Confidence trung bình (50-80%): Mô hình khá tự tin, cần xem xét
+- Confidence thấp (<50%): Mô hình không chắc chắn, cần cảnh báo
+
+3. Error Analysis:
+
+Phân tích các trường hợp dự đoán sai:
+- Loại lỗi nào phổ biến nhất
+- Các cặp lớp nào dễ bị nhầm lẫn
+- Có pattern nào trong các lỗi không (ví dụ: ảnh tối, ảnh mờ, góc chụp lạ)
+
+f) Cross-Validation (Xác thực chéo):
+
+Mặc dù đề tài sử dụng train/val/test split cố định, có thể mở rộng với k-fold cross-validation:
+- Chia dataset thành k folds
+- Train trên k-1 folds, validate trên 1 fold
+- Lặp lại k lần, mỗi fold làm validation một lần
+- Tính trung bình kết quả để có đánh giá ổn định hơn
+
+Tuy nhiên, với dataset đủ lớn và stratified split, train/val/test split cố định đã đủ đáng tin cậy.
+
+4.1.5. Kết luận
+
+Hệ thống đánh giá và đo lường hiệu năng trong đề tài đã được thiết kế toàn diện với các đặc điểm sau:
+
+- Cơ chế inference hiệu quả: Sử dụng batch processing, tắt gradients, và có thể sử dụng Mixed Precision để tăng tốc. Quy trình inference được tối ưu hóa để đảm bảo đánh giá chính xác và nhanh chóng.
+
+- Classification Report đa chiều: Cung cấp các metrics chi tiết (Precision, Recall, F1-Score, Support) cho từng lớp, cũng như Macro và Weighted averages. Điều này cho phép phân tích sâu performance của mô hình trên từng lớp và phát hiện các điểm yếu cần cải thiện.
+
+- Confusion Matrix trực quan: Visualization bằng heatmap giúp dễ dàng nhận biết các patterns nhầm lẫn giữa các lớp, hướng dẫn cải thiện mô hình và dataset.
+
+- Đánh giá khả năng tổng quát hóa: Sử dụng test set độc lập với stratified sampling đảm bảo đánh giá công bằng và phản ánh đúng khả năng của mô hình trên dữ liệu mới. So sánh performance giữa train/val/test cho biết mức độ overfitting.
+
+- Khả năng mở rộng: Hệ thống có thể đánh giá trên dataset lớn, trên nhiều domains khác nhau, và trên các nhóm toxicity khác nhau. Robustness testing với nhiều ảnh mẫu và phân tích confidence scores giúp đánh giá độ tin cậy của mô hình.
+
+Hệ thống đánh giá này cung cấp cơ sở vững chắc để hiểu rõ performance của mô hình, xác định các điểm mạnh và điểm yếu, và hướng dẫn việc cải thiện mô hình trong tương lai. Các metrics và visualizations được thiết kế không chỉ để đánh giá mà còn để giải thích và minh chứng cho chất lượng của hệ thống nhận diện nấm.
+

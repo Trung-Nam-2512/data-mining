@@ -1,0 +1,386 @@
+3.1. THIẾT KẾ KIẾN TRÚC MÔ HÌNH VÀ CHIẾN LƯỢC TỐI ƯU
+
+Thiết kế kiến trúc mô hình là một trong những bước quan trọng nhất trong quá trình xây dựng hệ thống nhận diện hình ảnh. Kiến trúc mô hình quyết định khả năng học và trích xuất đặc trưng từ dữ liệu, từ đó ảnh hưởng trực tiếp đến hiệu quả của hệ thống. Trong đề tài này, kiến trúc mô hình được thiết kế dựa trên phương pháp Transfer Learning (Học chuyển giao) kết hợp với các kỹ thuật tối ưu hóa tiên tiến nhằm đạt được hiệu quả cao nhất trong việc phân loại 11 chi nấm.
+
+3.1.1. Lựa chọn Backbone và Kỹ thuật Transfer Learning
+
+a) Khái niệm và lý thuyết về Transfer Learning:
+
+Transfer Learning (Học chuyển giao) là một kỹ thuật trong học máy cho phép tận dụng kiến thức đã được học từ một tác vụ hoặc dataset lớn để áp dụng vào một tác vụ mới có liên quan. Trong lĩnh vực thị giác máy tính (Computer Vision), Transfer Learning thường được thực hiện bằng cách sử dụng các mô hình mạng nơ-ron sâu (Deep Neural Networks) đã được huấn luyện trước trên dataset ImageNet - một dataset lớn với hơn 14 triệu ảnh thuộc hơn 20,000 lớp khác nhau.
+
+Nguyên lý hoạt động của Transfer Learning dựa trên giả thuyết rằng các đặc trưng cấp thấp (low-level features) như cạnh, góc, màu sắc, và các đặc trưng cấp cao (high-level features) như hình dạng, kết cấu được học từ ImageNet có thể được áp dụng chung cho nhiều tác vụ khác nhau. Đối với bài toán phân loại nấm, mặc dù ImageNet không chứa ảnh nấm, nhưng các đặc trưng về hình dạng, màu sắc, kết cấu bề mặt đã được học có thể được tái sử dụng để nhận diện các đặc điểm tương tự trong ảnh nấm.
+
+Các lợi ích chính của Transfer Learning bao gồm:
+
+- Giảm thời gian huấn luyện: Thay vì phải huấn luyện mô hình từ đầu với hàng triệu tham số, việc sử dụng mô hình đã được huấn luyện trước giúp giảm đáng kể thời gian và tài nguyên tính toán cần thiết. Mô hình chỉ cần được fine-tune (tinh chỉnh) trên dataset mới, thường mất vài giờ thay vì vài ngày hoặc vài tuần.
+
+- Cải thiện độ chính xác: Các mô hình đã được huấn luyện trước trên ImageNet đã học được các đặc trưng tổng quát và hiệu quả. Khi áp dụng vào dataset mới, mô hình có thể đạt được độ chính xác cao hơn so với việc huấn luyện từ đầu, đặc biệt khi dataset mới có kích thước nhỏ.
+
+- Giảm yêu cầu về dữ liệu: Với Transfer Learning, có thể đạt được kết quả tốt ngay cả khi dataset mới có số lượng mẫu hạn chế. Điều này rất quan trọng trong thực tế khi việc thu thập và gán nhãn dữ liệu thường tốn kém và mất thời gian.
+
+b) Lựa chọn Backbone Models:
+
+Backbone (khung xương) là phần mạng nơ-ron chính chịu trách nhiệm trích xuất đặc trưng từ ảnh đầu vào. Trong đề tài này, để đảm bảo tính toàn diện và khả năng so sánh, ba mô hình backbone phổ biến và hiệu quả đã được lựa chọn để triển khai và đánh giá:
+
+1. EfficientNet-B0:
+
+EfficientNet là một họ mô hình được thiết kế để tối ưu hóa sự cân bằng giữa độ chính xác và hiệu quả tính toán. EfficientNet-B0 là phiên bản nhỏ nhất trong họ EfficientNet, được tối ưu hóa để đạt được độ chính xác cao với số lượng tham số ít nhất.
+
+- Đặc điểm kiến trúc: EfficientNet sử dụng kỹ thuật compound scaling, tự động cân bằng độ sâu (depth), chiều rộng (width), và độ phân giải (resolution) của mạng để đạt được hiệu quả tối ưu. Mô hình sử dụng Mobile Inverted Bottleneck Convolution (MBConv) blocks, một kiến trúc hiệu quả về mặt tính toán.
+
+- Số lượng đặc trưng: Sau khi loại bỏ lớp phân loại cuối cùng, EfficientNet-B0 trích xuất 1,280 đặc trưng từ mỗi ảnh đầu vào. Đây là số lượng đặc trưng được truyền vào lớp phân loại tùy chỉnh.
+
+- Ưu điểm: Cân bằng tốt giữa độ chính xác và kích thước mô hình, phù hợp cho các ứng dụng cần hiệu quả tính toán cao.
+
+2. ResNet-50:
+
+ResNet (Residual Neural Network) là một trong những kiến trúc mạng nơ-ron sâu phổ biến và thành công nhất trong lịch sử thị giác máy tính. ResNet-50 là phiên bản có 50 lớp, được đặt tên theo số lượng lớp trong mạng.
+
+- Đặc điểm kiến trúc: Điểm đặc biệt của ResNet là sử dụng các kết nối tắt (skip connections) hay còn gọi là residual connections. Các kết nối này cho phép gradient truyền ngược trực tiếp qua các lớp, giải quyết vấn đề vanishing gradient (gradient biến mất) khi huấn luyện mạng sâu. Kiến trúc này cho phép huấn luyện các mạng rất sâu (hàng trăm lớp) một cách hiệu quả.
+
+- Số lượng đặc trưng: ResNet-50 trích xuất 2,048 đặc trưng từ mỗi ảnh đầu vào, đây là số lượng đặc trưng lớn nhất trong ba mô hình được sử dụng.
+
+- Ưu điểm: Kiến trúc ổn định, đã được chứng minh hiệu quả trên nhiều tác vụ khác nhau, dễ dàng fine-tune và đạt được độ chính xác cao.
+
+3. MobileNetV3-Large:
+
+MobileNet là một họ mô hình được thiết kế đặc biệt cho các thiết bị di động và edge devices (thiết bị biên) với tài nguyên tính toán hạn chế. MobileNetV3-Large là phiên bản lớn nhất trong họ MobileNetV3, được tối ưu hóa để cân bằng giữa độ chính xác và tốc độ xử lý.
+
+- Đặc điểm kiến trúc: MobileNet sử dụng Depthwise Separable Convolution, một kỹ thuật giảm số lượng tham số và phép tính cần thiết so với convolution thông thường. MobileNetV3 còn tích hợp các kỹ thuật tối ưu hóa như Squeeze-and-Excitation (SE) blocks và Hard-Swish activation function.
+
+- Số lượng đặc trưng: MobileNetV3-Large trích xuất 960 đặc trưng từ mỗi ảnh đầu vào, đây là số lượng đặc trưng nhỏ nhất trong ba mô hình.
+
+- Ưu điểm: Tốc độ xử lý nhanh nhất, phù hợp cho các ứng dụng real-time hoặc deployment trên thiết bị có tài nguyên hạn chế.
+
+c) Triển khai Transfer Learning:
+
+Quá trình triển khai Transfer Learning trong đề tài được thực hiện theo các bước sau:
+
+1. Sử dụng Pre-trained Weights:
+
+Mỗi backbone model được tải với các trọng số (weights) đã được huấn luyện trước trên ImageNet. Cụ thể:
+- ResNet-50 sử dụng ResNet50_Weights.DEFAULT
+- EfficientNet-B0 sử dụng EfficientNet_B0_Weights.DEFAULT  
+- MobileNetV3-Large sử dụng MobileNet_V3_Large_Weights.DEFAULT
+
+Các trọng số này chứa các đặc trưng đã được học từ hàng triệu ảnh trong ImageNet, cung cấp một điểm khởi đầu tốt cho việc học các đặc trưng của nấm.
+
+2. Chiến lược Fine-tuning:
+
+Trong đề tài này, chiến lược fine-tuning được áp dụng là fine-tune toàn bộ mô hình (freeze_backbone=False), nghĩa là tất cả các lớp trong backbone đều được phép cập nhật trọng số trong quá trình huấn luyện. Điều này cho phép mô hình điều chỉnh các đặc trưng đã học từ ImageNet để phù hợp hơn với đặc điểm của ảnh nấm.
+
+Tuy nhiên, để bảo vệ các đặc trưng đã được học tốt từ ImageNet, learning rate (tốc độ học) cho backbone được đặt thấp hơn so với learning rate cho lớp phân loại mới (sẽ được giải thích chi tiết ở phần 3.1.4).
+
+3. Trích xuất Đặc trưng:
+
+Lớp phân loại cuối cùng của mỗi backbone (thường là một lớp fully connected) được thay thế bằng nn.Identity(), một lớp không thực hiện phép biến đổi nào, chỉ đơn giản trả về đầu vào. Điều này cho phép backbone hoạt động như một bộ trích xuất đặc trưng (feature extractor), chuyển đổi ảnh đầu vào thành một vector đặc trưng có chiều cố định.
+
+3.1.2. Tùy biến lớp phân loại (Custom Classifier Head)
+
+a) Lý do thiết kế lớp phân loại tùy chỉnh:
+
+Mỗi backbone model được thiết kế ban đầu để phân loại 1,000 lớp trong ImageNet. Để áp dụng vào bài toán phân loại 11 chi nấm, cần thay thế lớp phân loại cuối cùng bằng một lớp phân loại mới phù hợp với số lượng lớp mục tiêu. Tuy nhiên, thay vì chỉ sử dụng một lớp fully connected đơn giản, đề tài thiết kế một Custom Classifier Head (Lớp phân loại tùy chỉnh) với nhiều lớp để tăng khả năng học và biểu diễn của mô hình.
+
+b) Kiến trúc Custom Classifier Head:
+
+Lớp phân loại tùy chỉnh được thiết kế với cấu trúc sau:
+
+```
+Input Features (num_features) 
+    ↓
+Dropout(0.5) - Tỷ lệ dropout 50%
+    ↓
+Linear(num_features → 512) - Lớp fully connected giảm chiều
+    ↓
+ReLU() - Hàm kích hoạt phi tuyến tính
+    ↓
+Dropout(0.3) - Tỷ lệ dropout 30%
+    ↓
+Linear(512 → 11) - Lớp phân loại cuối cùng (11 classes)
+    ↓
+Output (logits) - Đầu ra chưa qua softmax
+```
+
+c) Giải thích chi tiết các thành phần:
+
+1. Dropout Layers:
+
+Dropout là một kỹ thuật regularization (điều hòa) được sử dụng để giảm overfitting (quá khớp) - hiện tượng mô hình học quá tốt trên dữ liệu huấn luyện nhưng không thể tổng quát hóa tốt trên dữ liệu mới. Trong quá trình huấn luyện, Dropout "tắt" ngẫu nhiên một tỷ lệ nhất định các neurons (nơ-ron) trong mạng với xác suất p, buộc mạng phải học các đặc trưng phân tán và không phụ thuộc vào một số neurons cụ thể.
+
+- Dropout(0.5) ở đầu: Tỷ lệ dropout 50% được đặt ở đầu lớp phân loại để giảm overfitting mạnh. Điều này đặc biệt quan trọng khi số lượng dữ liệu huấn luyện không quá lớn.
+
+- Dropout(0.3) ở giữa: Tỷ lệ dropout 30% được đặt sau lớp ẩn đầu tiên, thấp hơn để giữ lại nhiều thông tin hơn cho lớp phân loại cuối cùng.
+
+2. Lớp Fully Connected (Linear):
+
+Lớp fully connected, còn gọi là lớp dense hoặc lớp linear, là lớp trong đó mỗi neuron được kết nối với tất cả các neurons ở lớp trước. Lớp này thực hiện phép biến đổi tuyến tính: output = input × weight + bias.
+
+- Lớp đầu tiên (num_features → 512): Giảm số chiều của vector đặc trưng từ num_features (1,280 cho EfficientNet-B0, 2,048 cho ResNet-50, hoặc 960 cho MobileNetV3-Large) xuống 512. Kích thước 512 được chọn là một sự cân bằng giữa khả năng biểu diễn và số lượng tham số. Một lớp quá lớn có thể dẫn đến overfitting, trong khi một lớp quá nhỏ có thể không đủ khả năng học các patterns phức tạp.
+
+- Lớp thứ hai (512 → 11): Lớp phân loại cuối cùng, chuyển đổi vector 512 chiều thành 11 giá trị logits tương ứng với 11 chi nấm. Mỗi giá trị logit đại diện cho điểm số (score) chưa được chuẩn hóa cho một lớp.
+
+3. Hàm kích hoạt ReLU:
+
+ReLU (Rectified Linear Unit) là một hàm kích hoạt phi tuyến tính được định nghĩa là f(x) = max(0, x). Hàm này có đặc điểm là đơn giản, tính toán nhanh, và giúp giải quyết vấn đề vanishing gradient. ReLU được đặt giữa hai lớp fully connected để thêm tính phi tuyến vào mô hình, cho phép mô hình học được các mối quan hệ phức tạp giữa các đặc trưng.
+
+d) Số lượng đặc trưng cho từng backbone:
+
+Tùy thuộc vào backbone được sử dụng, số lượng đặc trưng đầu vào cho Custom Classifier Head sẽ khác nhau:
+
+- EfficientNet-B0: 1,280 đặc trưng → 512 → 11 lớp
+- ResNet-50: 2,048 đặc trưng → 512 → 11 lớp  
+- MobileNetV3-Large: 960 đặc trưng → 512 → 11 lớp
+
+Tất cả đều được giảm xuống 512 đặc trưng ở lớp ẩn trước khi được phân loại thành 11 lớp cuối cùng.
+
+3.1.3. Hàm mất mát và chiến lược trọng số (Cost-Sensitive Learning)
+
+a) Vấn đề mất cân bằng dữ liệu:
+
+Trong dataset của đề tài, số lượng mẫu giữa các chi nấm có sự chênh lệch đáng kể, từ 218 mẫu (Suillus) đến 1,563 mẫu (Lactarius). Sự mất cân bằng này có thể dẫn đến việc mô hình học thiên về các lớp có nhiều mẫu hơn, dẫn đến độ chính xác thấp cho các lớp có ít mẫu. Đặc biệt, trong bài toán phân loại nấm, việc nhận diện sai các chi nấm độc có thể gây nguy hiểm đến tính mạng, do đó cần có chiến lược đặc biệt để đảm bảo mô hình có thể phát hiện chính xác các chi nấm độc.
+
+b) Hàm mất mát CrossEntropyLoss với Class Weights:
+
+CrossEntropyLoss là hàm mất mát tiêu chuẩn cho bài toán phân loại đa lớp. Hàm này đo lường sự khác biệt giữa phân phối xác suất dự đoán và phân phối xác suất thực tế (one-hot encoding).
+
+Để giải quyết vấn đề mất cân bằng dữ liệu, đề tài sử dụng CrossEntropyLoss với class weights (trọng số lớp). Mỗi lớp được gán một trọng số, và trọng số này được nhân với loss của lớp đó. Các lớp có ít mẫu sẽ được gán trọng số cao hơn, buộc mô hình phải chú ý nhiều hơn đến các lớp này trong quá trình học.
+
+Công thức tính class weight cơ bản:
+weight_i = 1.0 / count_i
+
+Trong đó count_i là số lượng mẫu của lớp i. Công thức này đảm bảo các lớp có ít mẫu sẽ có trọng số cao hơn.
+
+c) Chiến lược Cost-Sensitive Learning cho nấm độc:
+
+Trong bài toán phân loại nấm, chi phí của việc phân loại sai các chi nấm độc là rất cao (có thể gây nguy hiểm đến tính mạng), trong khi chi phí của việc phân loại sai các chi nấm ăn được thấp hơn. Do đó, đề tài áp dụng chiến lược Cost-Sensitive Learning (Học nhạy cảm với chi phí) bằng cách nhân thêm hệ số 4.0 cho trọng số của tất cả các chi nấm độc.
+
+Công thức tính class weight cho nấm độc:
+weight_i = (1.0 / count_i) × 4.0  (nếu lớp i là nấm độc)
+weight_i = 1.0 / count_i           (nếu lớp i là nấm ăn được)
+
+Hệ số 4.0 được chọn dựa trên thực nghiệm và mục tiêu đạt được recall (tỷ lệ phát hiện) >= 90% cho các chi nấm độc. Recall cao đảm bảo rằng hầu hết các nấm độc sẽ được phát hiện, giảm thiểu nguy cơ bỏ sót nấm độc.
+
+Sau khi tính toán, các trọng số được normalize (chuẩn hóa) để đảm bảo tổng trọng số không quá lớn, tránh làm mất ổn định quá trình huấn luyện.
+
+d) Label Smoothing:
+
+Label Smoothing là một kỹ thuật regularization khác được sử dụng để giảm overfitting. Thay vì sử dụng one-hot encoding cứng (ví dụ: [0, 0, 1, 0, ...] cho lớp thứ 3), Label Smoothing làm "mềm" labels bằng cách phân phối một phần nhỏ xác suất cho các lớp khác.
+
+Với Label Smoothing 10% (α = 0.1), label thực tế được chuyển đổi từ:
+- One-hot cứng: [0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+- One-hot mềm: [0.01, 0.01, 0.9, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01]
+
+Công thức: label_smooth = (1 - α) × one_hot + α / (n - 1) × (1 - one_hot)
+
+Trong đó n là số lượng lớp (11 trong trường hợp này).
+
+Lợi ích của Label Smoothing:
+- Giảm overconfidence: Mô hình không quá tự tin vào dự đoán của mình
+- Tăng khả năng tổng quát hóa: Mô hình học được các đặc trưng tổng quát hơn
+- Cải thiện robustness: Mô hình ổn định hơn với dữ liệu nhiễu
+
+e) Focal Loss (dự phòng):
+
+Mặc dù không được sử dụng trong quá trình huấn luyện chính, đề tài vẫn triển khai Focal Loss như một phương án dự phòng. Focal Loss được thiết kế để giải quyết vấn đề mất cân bằng dữ liệu bằng cách tập trung vào các mẫu khó phân loại. Focal Loss sử dụng tham số gamma để điều chỉnh mức độ tập trung vào các mẫu khó. Trong đề tài, gamma được đặt là 2.0, và Focal Loss cũng hỗ trợ Label Smoothing 10%.
+
+3.1.4. Kỹ thuật ổn định và tối ưu hóa huấn luyện
+
+a) Mixed Precision Training (Huấn luyện với độ chính xác hỗn hợp):
+
+Mixed Precision Training là kỹ thuật sử dụng cả số dấu chấm động 32-bit (FP32) và 16-bit (FP16) trong quá trình huấn luyện. Thông thường, các phép tính forward pass (lan truyền xuôi) được thực hiện với FP16 để tăng tốc và giảm bộ nhớ, trong khi backward pass (lan truyền ngược) và cập nhật trọng số được thực hiện với FP32 để đảm bảo độ chính xác.
+
+Cơ chế hoạt động:
+- Forward pass: Sử dụng autocast() để tự động chọn FP16 cho các phép tính phù hợp
+- Backward pass: Sử dụng GradScaler để scale gradients trước khi backward, tránh underflow (tràn dưới) khi sử dụng FP16
+- Weight update: Unscale gradients và cập nhật weights với FP32
+
+Lợi ích:
+- Tăng tốc độ huấn luyện: ~1.5-2 lần so với FP32 thuần túy
+- Giảm sử dụng bộ nhớ: ~50%, cho phép sử dụng batch size lớn hơn
+- Giữ nguyên độ chính xác: Gradient scaling đảm bảo không mất mát độ chính xác đáng kể
+
+b) Model Compilation (Biên dịch mô hình):
+
+Model Compilation là một tính năng mới trong PyTorch 2.0+ cho phép biên dịch mô hình thành một computation graph được tối ưu hóa. Quá trình này tương tự như JIT (Just-In-Time) compilation, tự động tối ưu hóa các phép tính và giảm overhead.
+
+Cơ chế hoạt động:
+- PyTorch phân tích computation graph của mô hình
+- Tối ưu hóa các phép tính, fusion các operations
+- Tạo ra một phiên bản được biên dịch với hiệu suất cao hơn
+
+Lợi ích:
+- Tăng tốc độ inference: ~20-30% so với mô hình không được biên dịch
+- Giảm overhead: Giảm thời gian gọi hàm và quản lý memory
+
+Lưu ý: Chỉ áp dụng được khi có GPU và PyTorch phiên bản >= 2.0.
+
+c) Differential Learning Rates (Tốc độ học khác biệt):
+
+Differential Learning Rates là kỹ thuật áp dụng các learning rate khác nhau cho các phần khác nhau của mô hình. Trong Transfer Learning, điều này đặc biệt quan trọng vì các phần của mô hình đã ở các giai đoạn học khác nhau.
+
+Lý do sử dụng:
+- Backbone đã được huấn luyện trên ImageNet với hàng triệu ảnh, đã học được các đặc trưng tổng quát tốt. Nếu sử dụng learning rate quá cao, có thể "phá hủy" các đặc trưng đã học tốt này.
+- Classifier là phần mới, chưa được huấn luyện, cần learning rate cao hơn để học nhanh các đặc trưng mới cho task cụ thể.
+
+Cấu hình trong đề tài:
+- Backbone Learning Rate = base_lr × 0.1 = 0.001 × 0.1 = 0.0001
+- Classifier Learning Rate = base_lr × 1.0 = 0.001 × 1.0 = 0.001
+
+Lợi ích:
+- Bảo vệ pre-trained features: Backbone được fine-tune một cách conservative
+- Cho phép classifier học nhanh: Classifier có thể học nhanh các patterns mới
+- Cải thiện convergence: Mô hình hội tụ nhanh hơn và đạt độ chính xác cao hơn
+- Giảm overfitting: Fine-tune backbone một cách cẩn thận giúp tránh overfitting
+
+d) Optimizer và Learning Rate Scheduling:
+
+1. Optimizer - Adam:
+
+Adam (Adaptive Moment Estimation) là một thuật toán tối ưu hóa kết hợp ưu điểm của cả Momentum và RMSprop. Adam tự động điều chỉnh learning rate cho từng tham số dựa trên ước lượng của moment bậc nhất (mean) và moment bậc hai (variance) của gradients.
+
+Công thức cập nhật của Adam:
+m_t = β₁ × m_{t-1} + (1 - β₁) × g_t
+v_t = β₂ × v_{t-1} + (1 - β₂) × g_t²
+θ_t = θ_{t-1} - α × m_t / (√v_t + ε)
+
+Trong đó:
+- m_t: ước lượng moment bậc nhất
+- v_t: ước lượng moment bậc hai
+- g_t: gradient tại bước t
+- α: learning rate
+- β₁, β₂: hệ số decay (mặc định 0.9 và 0.999)
+- ε: hệ số nhỏ để tránh chia cho 0
+
+Ưu điểm của Adam:
+- Tự động điều chỉnh learning rate cho từng tham số
+- Hội tụ nhanh
+- Hiệu quả với dữ liệu thưa (sparse data)
+
+Weight Decay (L2 Regularization):
+Weight decay = 1e-4 được sử dụng để thêm L2 regularization, giúp giảm overfitting bằng cách phạt các trọng số lớn.
+
+2. Learning Rate Scheduler - ReduceLROnPlateau:
+
+ReduceLROnPlateau là một scheduler điều chỉnh learning rate dựa trên một metric (thường là validation loss). Khi metric không cải thiện trong một số epochs nhất định, learning rate sẽ được giảm xuống.
+
+Cấu hình trong đề tài:
+- Mode: 'min' - Giảm LR khi validation loss không giảm
+- Factor: 0.5 - Giảm LR một nửa mỗi lần
+- Patience: 5 epochs - Chờ 5 epochs trước khi giảm LR
+- Verbose: True - Hiển thị thông báo khi giảm LR
+
+Lợi ích:
+- Tự động điều chỉnh learning rate: Không cần điều chỉnh thủ công
+- Cải thiện convergence: Giúp mô hình hội tụ tốt hơn ở giai đoạn cuối
+- Tránh overshooting: Giảm LR khi gần optimum giúp tìm được điểm tối ưu chính xác hơn
+
+e) Early Stopping (Dừng sớm):
+
+Early Stopping là kỹ thuật dừng quá trình huấn luyện sớm khi mô hình không còn cải thiện trên validation set. Điều này giúp tránh overfitting và tiết kiệm thời gian huấn luyện.
+
+Cơ chế hoạt động:
+- Theo dõi validation accuracy sau mỗi epoch
+- Nếu validation accuracy không cải thiện trong một số epochs liên tiếp (patience), dừng huấn luyện
+- Lưu lại mô hình tốt nhất (best model) dựa trên validation accuracy cao nhất
+
+Cấu hình trong đề tài:
+- Patience: 5 epochs - Chờ 5 epochs không cải thiện trước khi dừng
+- Metric: Validation accuracy - Sử dụng accuracy thay vì loss vì phù hợp hơn với bài toán phân loại
+
+Lợi ích:
+- Tránh overfitting: Dừng trước khi mô hình bắt đầu overfit
+- Tiết kiệm thời gian: Không cần chờ đến hết số epochs đã đặt
+- Tự động chọn best model: Luôn lưu lại mô hình tốt nhất
+
+f) Gradient Accumulation (Tích lũy gradient):
+
+Gradient Accumulation là kỹ thuật cho phép mô phỏng batch size lớn hơn bằng cách tích lũy gradients qua nhiều mini-batches trước khi cập nhật weights. Trong đề tài, gradient_accumulation_steps được đặt là 1 (không sử dụng), nhưng có thể tăng lên nếu muốn effective batch size lớn hơn trong trường hợp GPU memory hạn chế.
+
+Cơ chế hoạt động:
+- Chia batch thành nhiều mini-batches nhỏ hơn
+- Tính gradients cho từng mini-batch
+- Tích lũy gradients (cộng dồn)
+- Cập nhật weights sau khi tích lũy đủ gradients
+
+3.1.5. Kiểm chứng kiến trúc (Forward Pass Test)
+
+Trước khi bắt đầu quá trình huấn luyện, việc kiểm chứng kiến trúc mô hình là rất quan trọng để đảm bảo không có lỗi trong thiết kế và triển khai. Forward Pass Test là một bài kiểm tra đơn giản nhưng hiệu quả để xác minh rằng mô hình có thể xử lý dữ liệu đầu vào đúng cách.
+
+a) Quy trình kiểm chứng:
+
+1. Tạo mô hình: Khởi tạo MushroomClassifier với backbone và số lượng lớp tương ứng (11 classes)
+
+2. Tạo dữ liệu đầu vào giả: Tạo một tensor ngẫu nhiên với kích thước (1, 3, 224, 224), mô phỏng một ảnh:
+   - 1: batch size (một ảnh)
+   - 3: số kênh màu (RGB)
+   - 224, 224: chiều cao và chiều rộng của ảnh (kích thước chuẩn cho ImageNet)
+
+3. Thực hiện forward pass: Đưa tensor đầu vào qua mô hình để tính toán đầu ra:
+   output = model(input)
+
+4. Kiểm tra kích thước đầu ra: Đầu ra phải có kích thước (1, 11):
+   - 1: batch size (một ảnh)
+   - 11: số lượng lớp (11 chi nấm)
+
+b) Kết quả kiểm chứng:
+
+Khi thực hiện forward pass test, kết quả mong đợi là:
+- Output shape: (1, 11) ✓
+- Expected shape: (1, 11) ✓
+- Status: Forward OK - Kiến trúc mô hình hoạt động đúng
+
+c) Ý nghĩa của kiểm chứng:
+
+- Đảm bảo không có lỗi: Phát hiện các lỗi trong kiến trúc trước khi bắt đầu huấn luyện, tiết kiệm thời gian và tài nguyên
+- Xác nhận số lượng tham số: Đảm bảo số lượng tham số đúng như mong đợi
+- Verify forward pass: Xác minh rằng forward pass không có lỗi runtime, đảm bảo tất cả các phép tính được thực hiện đúng
+
+3.1.6. Tổng hợp kiến trúc mô hình
+
+Kiến trúc tổng thể của mô hình được tóm tắt trong sơ đồ sau:
+
+```
+Input Image (3, 224, 224)
+    ↓
+Backbone (Pre-trained trên ImageNet)
+    ├─ EfficientNet-B0 / ResNet-50 / MobileNetV3-Large
+    └─ Feature Extraction (num_features)
+         ├─ EfficientNet-B0: 1,280 features
+         ├─ ResNet-50: 2,048 features
+         └─ MobileNetV3-Large: 960 features
+    ↓
+Custom Classifier Head
+    ├─ Dropout(0.5) - Regularization
+    ├─ Linear(num_features → 512) - Giảm chiều
+    ├─ ReLU() - Activation function
+    ├─ Dropout(0.3) - Regularization
+    └─ Linear(512 → 11) - Phân loại cuối cùng
+    ↓
+Output Logits (11 classes)
+    ↓
+Softmax (trong quá trình inference)
+    ↓
+Predicted Class
+```
+
+3.1.7. Kết luận
+
+Thiết kế kiến trúc mô hình trong đề tài đã áp dụng các kỹ thuật tiên tiến và được chứng minh hiệu quả trong lĩnh vực thị giác máy tính:
+
+- Transfer Learning với ba backbone models (EfficientNet-B0, ResNet-50, MobileNetV3-Large) cho phép so sánh và đánh giá để chọn mô hình phù hợp nhất cho bài toán cụ thể. Mỗi backbone có những ưu điểm riêng về độ chính xác, tốc độ xử lý, và hiệu quả tính toán.
+
+- Custom Classifier Head được thiết kế phù hợp với task phân loại 11 classes, sử dụng Dropout layers để chống overfitting và các lớp fully connected để học các đặc trưng phức tạp từ vector đặc trưng được trích xuất bởi backbone.
+
+- Cost-Sensitive Learning với class weights 4x cho nấm độc đảm bảo an toàn và tăng recall cho các chi nấm độc, một yêu cầu quan trọng trong ứng dụng thực tế.
+
+- Label Smoothing 10% giúp chống overfitting và tăng khả năng generalization của mô hình.
+
+- Mixed Precision Training (FP16) tăng tốc độ huấn luyện và giảm sử dụng bộ nhớ mà không làm giảm đáng kể độ chính xác.
+
+- Model Compilation (torch.compile) tối ưu hóa computation graph để tăng tốc độ inference.
+
+- Differential Learning Rates cho phép tối ưu hóa fine-tuning bằng cách bảo vệ pre-trained features trong backbone và cho phép classifier học nhanh các đặc trưng mới.
+
+- Early Stopping và Learning Rate Scheduling (ReduceLROnPlateau) giúp ổn định quá trình huấn luyện và tự động điều chỉnh learning rate dựa trên performance trên validation set.
+
+Các kỹ thuật này tạo nền tảng vững chắc cho quá trình huấn luyện, đảm bảo mô hình có thể học hiệu quả từ dữ liệu và đạt được kết quả tốt trong việc phân loại 11 chi nấm, đồng thời đảm bảo tính an toàn với khả năng phát hiện cao các chi nấm độc.
