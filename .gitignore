@@ -68,8 +68,9 @@ Thumbs.db
 temp_image.jpg
 *.tmp
 
-# Markdown files
+# Markdown files (except README)
 *.md
+!README.md
 
 # Text files - ignore all .txt except link.txt
 *.txt

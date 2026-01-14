@@ -1,0 +1,15 @@
+# Cloudflare Tunnel Configuration
+# Copy this file to cloudflared/config.yml and update with your tunnel ID
+
+tunnel: YOUR_TUNNEL_ID_HERE  # Thay bằng tunnel ID của bạn
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  # Route domain đến Docker container
+  - hostname: mushroom.yourdomain.com  # Thay bằng domain của bạn
+    service: http://localhost:1356  # Nếu dùng network_mode: host
+    # service: http://mushroom-app:1356  # Nếu dùng shared network
+  
+  # Catch-all (trả về 404 cho các request khác)
+  - service: http_status:404
+
