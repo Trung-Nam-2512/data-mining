@@ -35,10 +35,11 @@ env/
 # Jupyter Notebook
 .ipynb_checkpoints
 
-# Model files (large)
-models/*.pth
-models/*.pt
-models/*.pkl
+# Model files (large) - ignore entire models directory
+models/
+*.pth
+*.pt
+*.pkl
 
 # Results
 results/*.png
