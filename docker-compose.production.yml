@@ -1,6 +1,22 @@
-version: '3.8'
-
 services:
+  # MongoDB Database
+  mongodb:
+    image: mongo:7.0
+    container_name: mushroom_mongodb
+    restart: unless-stopped
+    environment:
+      - MONGO_INITDB_DATABASE=mushroom_classification
+    volumes:
+      - mongodb_data:/data/db
+      - mongodb_config:/data/configdb
+    networks:
+      - mushroom_network
+    healthcheck:
+      test: [ "CMD", "mongosh", "--eval", "db.adminCommand('ping')" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # Mushroom App (Frontend + Backend)
   mushroom-app:
     build:
@@ -11,24 +27,23 @@ services:
     # Port chỉ cần accessible từ localhost
     # ports:
     #   - "1356:1356"  # Uncomment nếu cần test local
+    env_file:
+      - .env
     environment:
       - SERVER_HOST=0.0.0.0
       - SERVER_PORT=1356
-      - ENVIRONMENT=production
-      - MONGODB_URL=mongodb://host.docker.internal:27017
-      - MONGODB_DB_NAME=mushroom_classification
-      - DEVICE=cuda  # Change to 'cpu' if no GPU
-      - LOG_LEVEL=INFO
+      - MONGODB_URL=mongodb://mongodb:27017
     volumes:
       # Mount models directory (so you don't need to copy large files into image)
-      - ./models:/app/models:ro  # Read-only mount
+      - ./models:/app/models:ro # Read-only mount
       # Mount logs directory
       - ./logs:/app/logs
       # Mount uploads directory
       - ./uploads:/app/uploads
     restart: unless-stopped
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    depends_on:
+      mongodb:
+        condition: service_healthy
     networks:
       - mushroom_network
     # Uncomment if using GPU
@@ -40,8 +55,8 @@ services:
     #           count: 1
     #           capabilities: [gpu]
 
-  # Cloudflare Tunnel (Optional - nếu muốn chạy trong Docker)
-  # Nếu bạn đã cài cloudflared trên host, không cần service này
+    # Cloudflare Tunnel (Optional - nếu muốn chạy trong Docker)
+    # Nếu bạn đã cài cloudflared trên host, không cần service này
   cloudflared:
     image: cloudflare/cloudflared:latest
     container_name: cloudflared_tunnel
@@ -49,7 +64,7 @@ services:
     volumes:
       - ./cloudflared/config.yml:/etc/cloudflared/config.yml:ro
       - ./cloudflared/credentials.json:/etc/cloudflared/credentials.json:ro
-    network_mode: host  # Cần host network để access localhost:1356
+    network_mode: host # Cần host network để access localhost:1356
     restart: unless-stopped
     depends_on:
       - mushroom-app
@@ -63,3 +78,8 @@ networks:
   mushroom_network:
     driver: bridge
 
+volumes:
+  mongodb_data:
+    driver: local
+  mongodb_config:
+    driver: local

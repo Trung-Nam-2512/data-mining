@@ -137,11 +137,11 @@ async def predict_batch(
                 tmp_paths.append((tmp_path, file.filename))
             except Exception as e:
                 logger.error(f"Error saving file {file.filename}: {str(e)}")
-                    results.append({
-                        "success": False,
+                results.append({
+                    "success": False,
                     "image_filename": file.filename,
                     "error": f"Lỗi khi lưu file: {str(e)}"
-                    })
+                })
                 failed += 1
         
         # Get ensemble engine
